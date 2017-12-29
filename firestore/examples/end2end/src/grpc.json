@@ -1,0 +1,84 @@
+{
+ "grpc": {
+    "BatchGetDocuments": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "database": "projects/geoff-python/databases/(default)",
+        "documents": "projects/geoff-python/databases/(default)/documents/users/aturing"
+  },
+    "BeginTransaction": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "database": "projects/geoff-python/databases/(default)"
+  },
+    "Commit": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "database": "projects/geoff-python/databases/(default)",
+	"field_paths": "aturing.born",
+	"fields": "aturing.born",
+        "name": "projects/geoff-python/databases/(default)/documents/users/aturing"
+  },
+    "CreateDocument": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)/documents/test_document/my_chatroom",
+	"collection_id": "documentId506676927",
+	"document_id": " "
+  },
+    "DeleteDocuments": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"name": " "
+ },
+    "GetDocument": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "name": "projects/geoff-python/databases/(default)/documents/users/alovelace",
+	"document_mask_field_path": "alovelace"
+ },
+    "ListCollectionIds": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)/documents/test_document/my_chatroom"
+  },
+    "ListDocuments": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)/documents"
+  },
+    "Rollback": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"database": "projects/geoff-python/databases/(default)"
+  },
+    "RunQuery": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)",
+	"field_path": "foo"
+  },
+    "UpdateDocument": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "name": "projects/geoff-python/databases/(default)/documents/users/alovelace"
+  },
+    "Write": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+        "name": "projects/geoff-python/databases/(default)/documents/users/alovelace",
+	"database": "projects/geoff-python/databases/(default)"
+  },
+    "CreateIndex": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"name": "test",
+	"parent": "projects/geoff-python/databases/(default)",
+	"collection_id": "goya",
+	"field_path1": "mom.mom1",
+	"mode1": "ASCENDING",
+	"field_path2": "stefen.stefen1",
+	"mode2": "ASCENDING"
+ },
+    "DeleteIndex": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)"
+  },
+    "GetIndex": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)",
+	"name": "projects/geoff-python/databases/(default)"
+  },
+    "ListIndex": { 
+        "credentials": "/opt/Geoff-python-c2e9f0b91290.json",
+	"parent": "projects/geoff-python/databases/(default)"
+  }
+}
+}

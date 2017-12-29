@@ -1,0 +1,96 @@
+#!/usr/bin/python
+
+import os
+import sys
+  
+import subprocess
+import BatchGetDocuments  
+import BeginTransaction  
+import Commit  
+import CreateDocument
+import DeleteDocument
+import GetDocument
+import ListCollectionIds
+import ListDocuments
+import Rollback
+import RunQuery
+import UpdateDocument
+import CreateIndex
+import DeleteIndex
+import GetIndex
+import ListIndex
+import Write    
+
+
+subprocess.call('clear')
+   
+print("     Google Firestore RPC Menu \n")
+print("1|batchgetdocuments ......... BatchGetDocuments")
+print("2|begintransaction  ......... BeginTransaction")
+print("3|commit .................... Commit")
+print("4|createdocument ............ CreateDocument")
+print("5|deletedocument ............ DeleteDocument")
+print("6|getdocument ............... GetDocument")
+print("7|listcollectionids ......... ListCollectionIds")
+print("8|listdocuments ............. ListDocuments")
+print("9|rollback .................. Rollback")
+print("10|runquery ................. RunQuery")
+print("11|updatedocument ........... UpdateDocument")
+print("12|write..................... Write\n")
+print("     Firestore Admin RPC's         \n")
+print("13|createindex .............. CreateIndex")
+print("14|deleteindex .............. DeleteIndex")
+print("15|getindex ................. GetIndex")
+print("16|listindex ................ ListIndex\n")
+
+grpc = raw_input("Enter an Option: ")
+
+if grpc == 'batchgetdocuments' or grpc == '1':
+   BatchGetDocuments.main()
+    
+if grpc == 'begintransaction' or grpc == '2':
+   BeginTransaction.main()
+   
+if grpc == 'commit' or grpc == '3':
+   Commit.main()
+   
+if grpc == 'createdocument' or grpc == '4':
+   CreateDocument.main()
+   
+if grpc == 'deletedocument' or grpc == '5':
+   DeleteDocument.main()
+   
+if grpc == 'getdocument' or grpc == '6':
+   GetDocument.main()
+   
+if grpc == 'listcollectionids' or grpc == '7':
+   ListCollectionIds.main()
+   
+if grpc == 'listdocuments' or grpc == '8':
+   ListDocuments.main()
+if grpc == 'rollback' or grpc == '9':
+   Rollback.main()
+   
+if grpc == 'runquery' or grpc == '10':
+   RunQuery.main()
+   
+if grpc == 'updatedocument' or grpc == '11':
+   UpdateDocument.main()
+   
+if grpc == 'write' or grpc == '12':
+   Write.main()
+   
+if grpc == 'createindex' or grpc == '13':
+   CreateIndex.main()
+   
+if grpc == 'deleteindex' or grpc == '14':
+   DeleteIndex.main()
+   
+if grpc == 'getindex' or grpc == '15':
+   GetIndex.main()
+   
+if grpc == 'listindex' or grpc == '16':
+   ListIndex.main()
+   
+if grpc == 'runquery' or grpc == '17':
+   RunQuery.main()

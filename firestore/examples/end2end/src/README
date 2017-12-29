@@ -1,0 +1,13 @@
+1) Firestore GRPC are documented here https://cloud.google.com/firestore/docs/reference/rpc/google.firestore.v1beta1.
+
+2) GRPC parameters are defined in the grpc.json file.
+
+3) If a parameter is missing from the grpc.json file the end user will be prompted for the parameter input for GRPC's that accept interactive input.
+
+4) The console program can be invoked at the command prompt:
+
+		./grpcCTL
+
+5) Each GRPC can be run individually, for example:
+
+		./ListDocuments.py 
