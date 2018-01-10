@@ -1,0 +1,40 @@
+# Copyright 2018 gRPC-GCP authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+import grpc
+from grpc_gcp import _channel
+
+# The channel argument to for gRPC-GCP API config.
+# Its value must be a valid ApiConfig proto defined in grpc_gcp.proto.
+GRPC_GCP_CHANNEL_ARG_API_CONFIG = 'grpc_gcp.api_config'
+
+
+def secure_channel(target, credentials, options=None):
+    """Creates a secure Channel to a server.
+
+    Args:
+      target: The server address.
+      credentials: A ChannelCredentials instance.
+      options: An optional list of key-value pairs (channel args
+        in gRPC Core runtime) to configure the channel.
+
+    Returns:
+      A Channel object.
+    """
+    if options is not None and [
+            arg for arg in options if arg[0] == GRPC_GCP_CHANNEL_ARG_API_CONFIG
+    ] is not None:
+        return _channel.Channel(target, ()
+                                if options is None else options, credentials)
+    else:
+        return grpc.secure_channel(target, credentials, options)

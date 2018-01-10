@@ -1,0 +1,5 @@
+grpcio
+grpcio-tools
+grpcio-gcp
+google-auth
+requests
