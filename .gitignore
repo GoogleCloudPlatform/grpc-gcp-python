@@ -1,2 +1,5 @@
 # python compiled objects.
 *.pyc
+
+# IDE folders.
+.vscode/

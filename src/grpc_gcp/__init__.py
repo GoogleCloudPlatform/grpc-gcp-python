@@ -16,7 +16,7 @@ from grpc_gcp import _channel
 
 # The channel argument to for gRPC-GCP API config.
 # Its value must be a valid ApiConfig proto defined in grpc_gcp.proto.
-GRPC_GCP_CHANNEL_ARG_API_CONFIG = 'grpc_gcp.api_config'
+API_CONFIG_CHANNEL_ARG = 'grpc_gcp.api_config'
 
 
 def secure_channel(target, credentials, options=None):
@@ -32,9 +32,28 @@ def secure_channel(target, credentials, options=None):
       A Channel object.
     """
     if options is not None and [
-            arg for arg in options if arg[0] == GRPC_GCP_CHANNEL_ARG_API_CONFIG
+            arg for arg in options if arg[0] == API_CONFIG_CHANNEL_ARG
     ] is not None:
         return _channel.Channel(target, ()
                                 if options is None else options, credentials)
     else:
         return grpc.secure_channel(target, credentials, options)
+
+
+def insecure_channel(target, options=None):
+    """Creates an insecure Channel to a server.
+
+    Args:
+      target: The server address.
+      options: An optional list of key-value pairs (channel args
+        in gRPC Core runtime) to configure the channel.
+
+    Returns:
+      A Channel object.
+    """
+    if options is not None and [
+            arg for arg in options if arg[0] == API_CONFIG_CHANNEL_ARG
+    ] is not None:
+        return _channel.Channel(target, options)
+    else:
+        return grpc.insecure_channel(target, options)

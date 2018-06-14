@@ -13,9 +13,10 @@
 # limitations under the License.
 import grpc
 import grpc_gcp
-from grpc_gcp import grpc_gcp_pb2
 import itertools
 import threading
+
+from grpc_gcp.proto import grpc_gcp_pb2
 
 # The channel arg to distinguish different gRPC channels.
 _CLIENT_CHANNEL_ID = 'grpc_gcp.client_channel.id'
@@ -407,7 +408,7 @@ def _get_api_config_channel_arg(options):
         return None
     arg = [
         arg for arg in options
-        if arg[0] == grpc_gcp.GRPC_GCP_CHANNEL_ARG_API_CONFIG
+        if arg[0] == grpc_gcp.API_CONFIG_CHANNEL_ARG
     ]
     if arg is None or len(arg) == 0:
         return None
@@ -420,14 +421,20 @@ class Channel(grpc.Channel):
 
     def __init__(self, target, options=None, credentials=None):
         self._config = _get_api_config_channel_arg(options)
+        # Default to 10.
+        self._max_size = 10
+        # Default to 100
+        self._max_concurrent_streams_low_watermark = 100
+
         if self._config is not None and self._config.channel_pool is not None:
-            self._max_size = self._config.channel_pool.max_size
-            self._max_concurrent_streams_low_watermark = self._config.channel_pool.max_concurrent_streams_low_watermark
-        else:
-            # Default to 10.
-            self._max_size = 10
-            # Default to 100
-            self._max_concurrent_streams_low_watermark = 1
+            if self._config.channel_pool.max_size:
+                # Use user defined values if max_size is configured
+                self._max_size = self._config.channel_pool.max_size
+            if self._config.channel_pool.max_concurrent_streams_low_watermark:
+                # Use user defined values if max_concurrent_streams_low_watermark is configured
+                self._max_concurrent_streams_low_watermark = \
+                    self._config.channel_pool.max_concurrent_streams_low_watermark
+
         self._target = target
         self._options = options
         self._credentials = credentials
@@ -439,6 +446,7 @@ class Channel(grpc.Channel):
         # A list of managed channel refs.
         self._channel_refs = []
         self._subscribers = []
+        self._channel_pool_connectivity = None
         return
 
     def _init_affinity_by_method_index(self):
@@ -460,7 +468,7 @@ class Channel(grpc.Channel):
 
     def _unbind(self, affinity_key):
         with self._lock:
-            channel_ref = self._channel_ref_by_affinity_key[affinity_key]
+            channel_ref = self._channel_ref_by_affinity_key.pop(affinity_key, None)
             if channel_ref:
                 channel_ref.affinity_ref_decr()
             return channel_ref
@@ -474,24 +482,20 @@ class Channel(grpc.Channel):
                 # Finds the gRPC channel according to the affinity key.
                 channel_ref = self._channel_ref_by_affinity_key.get(
                     affinity_key)
-                if not channel_ref:
-                    # TODO(fengli): Affinity key not found, log an error.
-                    return self._get_channel_ref()
-                return channel_ref
+                if channel_ref:
+                    return channel_ref
+                # TODO(fengli): If affinity key not found, log an error.
 
             # TODO(fengli): Creates new gRPC channels on demand, depends on the load reporting.
             num_channel_refs = len(self._channel_refs)
             sorted_channel_refs = sorted(
                 self._channel_refs, key=lambda ref: ref.active_stream_ref())
 
-            for channel_ref in sorted_channel_refs:
-                if channel_ref.active_stream_ref(
-                ) <= self._max_concurrent_streams_low_watermark:
-                    # If there's a free channel, use it.
-                    return channel_ref
-                else:
-                    # If all channels are busy, break.
-                    break
+            if (sorted_channel_refs and
+                    sorted_channel_refs[0].active_stream_ref()
+                    < self._max_concurrent_streams_low_watermark):
+                # If there's a free channel with low active streams, use it.
+                return sorted_channel_refs[0]
 
             if num_channel_refs < self._max_size:
                 # Creates a new gRPC channel.
@@ -565,17 +569,21 @@ class Channel(grpc.Channel):
                 )._connectivity_state.connectivity == grpc.ChannelConnectivity.IDLE:
                     idle += 1
             if ready > 0:
-                return grpc.ChannelConnectivity.READY
+                current_connectivity = grpc.ChannelConnectivity.READY
             elif idle > 0:
-                return grpc.ChannelConnectivity.IDLE
+                current_connectivity = grpc.ChannelConnectivity.IDLE
             elif connecting > 0:
-                return grpc.ChannelConnectivity.CONNECTING
+                current_connectivity = grpc.ChannelConnectivity.CONNECTING
             elif transient_failure > 0:
-                return grpc.ChannelConnectivity.TRANSIENT_FAILURE
+                current_connectivity = grpc.ChannelConnectivity.TRANSIENT_FAILURE
             elif shutdown > 0:
-                return grpc.ChannelConnectivity.SHUTDOWN
+                current_connectivity = grpc.ChannelConnectivity.SHUTDOWN
             else:
-                return grpc.ChannelConnectivity.IDLE
+                current_connectivity = grpc.ChannelConnectivity.IDLE
+            
+            if current_connectivity != self._channel_pool_connectivity:
+                self._channel_pool_connectivity = current_connectivity
+                self._spawn_subscribe_callbacks(current_connectivity)
 
     def _spawn_subscribe_callbacks(self, state):
         for callback in self._subscribers:
@@ -600,4 +608,4 @@ class Channel(grpc.Channel):
     def close(self):
         with self._lock:
             for channel_ref in self._channel_refs:
-                channel_ref.channel.close()
+                channel_ref.channel().close()

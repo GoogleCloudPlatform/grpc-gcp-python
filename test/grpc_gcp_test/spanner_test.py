@@ -11,25 +11,74 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from google.spanner.v1 import spanner_pb2_grpc
-from google.spanner.v1 import spanner_pb2
+"""Tests grpc_gcp channel behaviors for Spanner APIs.
+
+Database schema:
+
+    Column           | Type   | Nullable
+    ------------------------------------
+    id (Primary key) | STRING | No
+    data             | BYTES  | Yes
+
+Test data:
+
+    id        | data
+    -----------------------
+    'payload' | <data blob>
+
+"""
+
+import google.protobuf.text_format
+import grpc
+import grpc_gcp._channel
+import pkg_resources
+import threading
+import unittest
+
 from google.auth.transport.grpc import secure_authorized_channel
 from google.auth.transport.requests import Request
-import google.protobuf.text_format
-import grpc_gcp._channel
-import grpc_gcp.grpc_gcp_pb2
-import pkg_resources
-import unittest
+from google.spanner.v1 import spanner_pb2
+from google.spanner.v1 import spanner_pb2_grpc
+from grpc_gcp.proto import grpc_gcp_pb2
 
 _TARGET = 'spanner.googleapis.com'
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
+_TEST_SQL = 'select id from storage'
+_TEST_COLUMN_DATA = 'payload'
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 _DEFAULT_MAX_CHANNELS_PER_TARGET = 10
 
 
+class _Callback(object):
+    def __init__(self):
+        self._condition = threading.Condition()
+        self._first_connectivities = []
+        self._second_connectivites = []
+
+    def update_first(self, connectivity):
+        with self._condition:
+            self._first_connectivities.append(connectivity)
+            self._condition.notify()
+
+    def update_second(self, connectivity):
+        with self._condition:
+            self._second_connectivites.append(connectivity)
+            self._condition.notify()
+
+    def block_until_connectivities_satisfy(self, predicate, first=True):
+        with self._condition:
+            while True:
+                connectivities = tuple(self._first_connectivities
+                                       if first else self._second_connectivites)
+                if predicate(connectivities):
+                    return connectivities
+                else:
+                    self._condition.wait()
+
+
 class SpannerTest(unittest.TestCase):
     def setUp(self):
-        config = grpc_gcp.grpc_gcp_pb2.ApiConfig()
+        config = grpc_gcp_pb2.ApiConfig()
         google.protobuf.text_format.Merge(
             pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
             config)
@@ -39,19 +88,14 @@ class SpannerTest(unittest.TestCase):
             credentials,
             http_request,
             _TARGET,
-            options=[(grpc_gcp.GRPC_GCP_CHANNEL_ARG_API_CONFIG, config)])
+            options=[(grpc_gcp.API_CONFIG_CHANNEL_ARG, config)])
         self.assertIsInstance(self.channel, grpc_gcp._channel.Channel)
+        self.assertEqual(self.channel._max_concurrent_streams_low_watermark, 1)
+        self.assertEqual(self.channel._max_size, 10)
 
     def test_create_session_reuse_channel(self):
         stub = spanner_pb2_grpc.SpannerStub(self.channel)
-        for i in range(_DEFAULT_MAX_CHANNELS_PER_TARGET):
-            session = stub.CreateSession(
-                spanner_pb2.CreateSessionRequest(database=_DATABASE))
-            self.assertIsNotNone(session)
-            self.assertEqual(1, len(self.channel._channel_refs))
-            stub.DeleteSession(
-                spanner_pb2.DeleteSessionRequest(name=session.name))
-        for i in range(_DEFAULT_MAX_CHANNELS_PER_TARGET):
+        for i in range(_DEFAULT_MAX_CHANNELS_PER_TARGET * 2):
             session = stub.CreateSession(
                 spanner_pb2.CreateSessionRequest(database=_DATABASE))
             self.assertIsNotNone(session)
@@ -117,13 +161,15 @@ class SpannerTest(unittest.TestCase):
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
         result_set = stub.ExecuteSql(
             spanner_pb2.ExecuteSqlRequest(
-                session=session.name, sql='select id from storage'))
+                session=session.name,
+                sql=_TEST_SQL))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
         self.assertIsNotNone(result_set)
         self.assertEqual(1, len(result_set.rows))
-        self.assertEqual('payload', result_set.rows[0].values[0].string_value)
+        self.assertEqual(_TEST_COLUMN_DATA,
+                         result_set.rows[0].values[0].string_value)
         stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(0, self.channel._channel_refs[0]._affinity_ref)
@@ -139,13 +185,15 @@ class SpannerTest(unittest.TestCase):
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
         result_set, rendezvous = stub.ExecuteSql.with_call(
             spanner_pb2.ExecuteSqlRequest(
-                session=session.name, sql='select id from storage'))
+                session=session.name,
+                sql=_TEST_SQL))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
         self.assertIsNotNone(result_set)
         self.assertEqual(1, len(result_set.rows))
-        self.assertEqual('payload', result_set.rows[0].values[0].string_value)
+        self.assertEqual(_TEST_COLUMN_DATA,
+                         result_set.rows[0].values[0].string_value)
         stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(0, self.channel._channel_refs[0]._affinity_ref)
@@ -161,7 +209,8 @@ class SpannerTest(unittest.TestCase):
         self.assertIsNotNone(session)
         rendezvous = stub.ExecuteSql.future(
             spanner_pb2.ExecuteSqlRequest(
-                session=session.name, sql='select id from storage'))
+                session=session.name,
+                sql=_TEST_SQL))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(1, self.channel._channel_refs[0]._active_stream_ref)
@@ -171,7 +220,8 @@ class SpannerTest(unittest.TestCase):
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
         self.assertIsNotNone(result_set)
         self.assertEqual(1, len(result_set.rows))
-        self.assertEqual('payload', result_set.rows[0].values[0].string_value)
+        self.assertEqual(_TEST_COLUMN_DATA,
+                         result_set.rows[0].values[0].string_value)
         stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(0, self.channel._channel_refs[0]._affinity_ref)
@@ -187,13 +237,14 @@ class SpannerTest(unittest.TestCase):
         self.assertIsNotNone(session)
         rendezvous = stub.ExecuteStreamingSql(
             spanner_pb2.ExecuteSqlRequest(
-                session=session.name, sql='select id from storage'))
+                session=session.name,
+                sql=_TEST_SQL))
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(1, self.channel._channel_refs[0]._active_stream_ref)
         self.assertIsNotNone(rendezvous)
         for partial_result_set in rendezvous:
-            self.assertEqual('payload',
+            self.assertEqual(_TEST_COLUMN_DATA,
                              partial_result_set.values[0].string_value)
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
@@ -203,6 +254,193 @@ class SpannerTest(unittest.TestCase):
         self.assertEqual(0, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
 
+    def test_concurrent_streams_watermark(self):
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+        watermark = 2
+        self.channel._max_concurrent_streams_low_watermark = watermark
+        self.assertEqual(self.channel._max_concurrent_streams_low_watermark, watermark)
+
+        session_list = []
+        rendezvous_list = []
+
+        # When active streams have not reached the concurrent_streams_watermark,
+        # gRPC calls should be reusing the same channel.
+        for i in range(watermark):
+            session = stub.CreateSession(
+                spanner_pb2.CreateSessionRequest(database=_DATABASE))
+            self.assertEqual(1, len(self.channel._channel_refs))
+            self.assertEqual(i + 1, self.channel._channel_refs[0]._affinity_ref)
+            self.assertEqual(i, self.channel._channel_refs[0]._active_stream_ref)
+            self.assertIsNotNone(session)
+            session_list.append(session)
+
+            rendezvous = stub.ExecuteStreamingSql(
+                spanner_pb2.ExecuteSqlRequest(
+                    session=session.name,
+                    sql=_TEST_SQL))
+            self.assertEqual(1, len(self.channel._channel_refs))
+            self.assertEqual(i + 1, self.channel._channel_refs[0]._affinity_ref)
+            self.assertEqual(i + 1, self.channel._channel_refs[0]._active_stream_ref)
+            rendezvous_list.append(rendezvous)
+
+        # When active streams reach the concurrent_streams_watermark,
+        # channel pool will create a new channel.
+        another_session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        self.assertEqual(2, len(self.channel._channel_refs))
+        self.assertEqual(2, self.channel._channel_refs[0]._affinity_ref)
+        self.assertEqual(2, self.channel._channel_refs[0]._active_stream_ref)
+        self.assertEqual(1, self.channel._channel_refs[1]._affinity_ref)
+        self.assertEqual(0, self.channel._channel_refs[1]._active_stream_ref)
+        self.assertIsNotNone(another_session)
+        session_list.append(another_session)
+
+        another_rendezvous = stub.ExecuteStreamingSql(
+            spanner_pb2.ExecuteSqlRequest(
+                session=another_session.name,
+                sql=_TEST_SQL))
+        self.assertEqual(2, len(self.channel._channel_refs))
+        self.assertEqual(2, self.channel._channel_refs[0]._affinity_ref)
+        self.assertEqual(2, self.channel._channel_refs[0]._active_stream_ref)
+        self.assertEqual(1, self.channel._channel_refs[1]._affinity_ref)
+        self.assertEqual(1, self.channel._channel_refs[1]._active_stream_ref)
+        rendezvous_list.append(another_rendezvous)
+
+        # Iterate through the rendezous list to clean active streams.
+        for rendezvous in rendezvous_list:
+            for _ in rendezvous:
+                continue
+
+        # After cleaning, previously created channels will remain in the pool.
+        self.assertEqual(2, len(self.channel._channel_refs))
+        self.assertEqual(2, self.channel._channel_refs[0]._affinity_ref)
+        self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
+        self.assertEqual(1, self.channel._channel_refs[1]._affinity_ref)
+        self.assertEqual(0, self.channel._channel_refs[1]._active_stream_ref)
+
+        # Delete all sessions to clean affinity.
+        for session in session_list:
+            stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
+        self.assertEqual(2, len(self.channel._channel_refs))
+        self.assertEqual(0, self.channel._channel_refs[0]._affinity_ref)
+        self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
+        self.assertEqual(0, self.channel._channel_refs[1]._affinity_ref)
+        self.assertEqual(0, self.channel._channel_refs[1]._active_stream_ref)
+
+    def test_bound_unbind_with_invalid_affinity_key(self):
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+
+        with self.assertRaises(Exception) as context:
+            stub.GetSession(
+                spanner_pb2.GetSessionRequest(name='random_name'))
+        self.assertEqual(grpc.StatusCode.INVALID_ARGUMENT,
+                         context.exception.code())
+
+        with self.assertRaises(Exception) as context:
+            stub.DeleteSession(
+                spanner_pb2.DeleteSessionRequest(name='random_name'))
+        self.assertEqual(grpc.StatusCode.INVALID_ARGUMENT,
+                         context.exception.code())
+
+    def test_bound_after_unbind(self):
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        self.assertEqual(1, len(self.channel._channel_ref_by_affinity_key))
+        stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+        self.assertEqual(0, len(self.channel._channel_ref_by_affinity_key))
+        with self.assertRaises(Exception) as context:
+            stub.GetSession(
+                spanner_pb2.GetSessionRequest(name=session.name))
+        self.assertEqual(grpc.StatusCode.NOT_FOUND,
+                         context.exception.code())
+
+    def test_channel_connectivity(self):
+        callback = _Callback()
+
+        self.channel.subscribe(callback.update_first, try_to_connect=False)
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        connectivities = callback.block_until_connectivities_satisfy(
+            lambda connectivities: grpc.ChannelConnectivity.READY in connectivities)
+        self.assertEqual(3, len(connectivities))
+        self.assertSequenceEqual((grpc.ChannelConnectivity.IDLE,
+                                  grpc.ChannelConnectivity.CONNECTING,
+                                  grpc.ChannelConnectivity.READY),
+                                 connectivities)
+        stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
+        self.channel.unsubscribe(callback.update_first)
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        self.assertEqual(3, len(connectivities))
+        stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
+    def test_channel_connectivity_mutiple_subchannels(self):
+        callback = _Callback()
+
+        self.channel.subscribe(callback.update_first, try_to_connect=False)
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+        futures = []
+        for _ in range (2):
+            futures.append(stub.CreateSession.future(
+                spanner_pb2.CreateSessionRequest(database=_DATABASE)))
+        connectivities = callback.block_until_connectivities_satisfy(
+            lambda connectivities: grpc.ChannelConnectivity.READY in connectivities)
+
+        self.assertEqual(2, len(self.channel._channel_refs))
+        self.assertEqual(3, len(connectivities))
+        self.assertSequenceEqual((grpc.ChannelConnectivity.IDLE,
+                                  grpc.ChannelConnectivity.CONNECTING,
+                                  grpc.ChannelConnectivity.READY),
+                                 connectivities)
+        for future in futures:
+            stub.DeleteSession(
+                spanner_pb2.DeleteSessionRequest(name=future.result().name))
+        
+    def test_channel_connectivity_invalid_target(self):
+        config = grpc_gcp_pb2.ApiConfig()
+        google.protobuf.text_format.Merge(
+            pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
+            config)
+        http_request = Request()
+        credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
+        invalid_channel = secure_authorized_channel(
+            credentials,
+            http_request,
+            'localhost:1234',
+            options=[(grpc_gcp.API_CONFIG_CHANNEL_ARG, config)])
+
+        callback = _Callback()
+        invalid_channel.subscribe(callback.update_first, try_to_connect=False)
+
+        stub = spanner_pb2_grpc.SpannerStub(invalid_channel)
+        with self.assertRaises(Exception) as context:
+            stub.CreateSession(
+                spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        self.assertEqual(grpc.StatusCode.UNAVAILABLE,
+                         context.exception.code())
+        first_connectivities = callback.block_until_connectivities_satisfy(
+            lambda connectivities: len(connectivities) >= 3)
+        self.assertEqual(grpc.ChannelConnectivity.IDLE, first_connectivities[0])
+        self.assertIn(grpc.ChannelConnectivity.CONNECTING, first_connectivities)
+        self.assertIn(grpc.ChannelConnectivity.TRANSIENT_FAILURE, first_connectivities)
+
+        invalid_channel.subscribe(callback.update_second, try_to_connect=True)
+        second_connectivities = callback.block_until_connectivities_satisfy(
+            lambda connectivities: len(connectivities) >= 3, False)
+        self.assertNotIn(grpc.ChannelConnectivity.IDLE, second_connectivities)
+        self.assertIn(grpc.ChannelConnectivity.CONNECTING, second_connectivities)
+        self.assertIn(grpc.ChannelConnectivity.TRANSIENT_FAILURE, second_connectivities)
+
+        self.assertEqual(2, len(invalid_channel._subscribers))
+        invalid_channel.unsubscribe(callback.update_first)
+        invalid_channel.unsubscribe(callback.update_second)
+        self.assertEqual(0, len(invalid_channel._subscribers))
+        
+        
 
 if __name__ == "__main__":
     unittest.main()
