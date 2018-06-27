@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 GRPC = '1.12.0'
-GRPC_GCP = '0.0.4'
+GRPC_GCP = '0.1.1'

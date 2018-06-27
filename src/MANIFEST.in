@@ -1,4 +1,4 @@
-include README.rst LICENSE
+include README.rst CHANGELOG.rst LICENSE
 include version.py
 recursive-include grpc_gcp *.py
 global-exclude *.pyc __pycache__
