@@ -63,10 +63,8 @@ Load configuration file to ApiConfig object.
 
   import google.protobuf.text_format
 
-  config = grpc_gcp.grpc_gcp_pb2.ApiConfig()
-  google.protobuf.text_format.Merge(
-      pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
-      config)
+  config = grpc_gcp.api_config_from_text_pb(
+      pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
 
 Create channel pool using grpc_gcp.
 
