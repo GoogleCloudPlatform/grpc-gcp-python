@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import grpc
+from google.protobuf import text_format
 from grpc_gcp import _channel
+from grpc_gcp.proto import grpc_gcp_pb2
 
 # The channel argument to for gRPC-GCP API config.
 # Its value must be a valid ApiConfig proto defined in grpc_gcp.proto.
@@ -57,3 +59,18 @@ def insecure_channel(target, options=None):
         return _channel.Channel(target, options)
     else:
         return grpc.insecure_channel(target, options)
+
+
+def api_config_from_text_pb(text_pb):
+    """Creates an instance of ApiConfig with provided api configuration.
+
+    Args:
+      text_pb: The text representation of a protocol message defining api
+        configuration.
+
+    Returns:
+      A grpc_gcp_pb2.ApiConfig object.
+    """
+    config = grpc_gcp_pb2.ApiConfig()
+    text_format.Merge(text_pb, config)
+    return config

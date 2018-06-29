@@ -30,7 +30,7 @@ Test data:
 
 import google.protobuf.text_format
 import grpc
-import grpc_gcp._channel
+import grpc_gcp
 import pkg_resources
 import threading
 import unittest
@@ -39,7 +39,6 @@ from google.auth.transport.grpc import secure_authorized_channel
 from google.auth.transport.requests import Request
 from google.spanner.v1 import spanner_pb2
 from google.spanner.v1 import spanner_pb2_grpc
-from grpc_gcp.proto import grpc_gcp_pb2
 
 _TARGET = 'spanner.googleapis.com'
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
@@ -78,10 +77,8 @@ class _Callback(object):
 
 class SpannerTest(unittest.TestCase):
     def setUp(self):
-        config = grpc_gcp_pb2.ApiConfig()
-        google.protobuf.text_format.Merge(
-            pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
-            config)
+        config = grpc_gcp.api_config_from_text_pb(
+            pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
         http_request = Request()
         credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
         self.channel = secure_authorized_channel(
@@ -95,7 +92,7 @@ class SpannerTest(unittest.TestCase):
 
     def test_create_session_reuse_channel(self):
         stub = spanner_pb2_grpc.SpannerStub(self.channel)
-        for i in range(_DEFAULT_MAX_CHANNELS_PER_TARGET * 2):
+        for _ in range(_DEFAULT_MAX_CHANNELS_PER_TARGET * 2):
             session = stub.CreateSession(
                 spanner_pb2.CreateSessionRequest(database=_DATABASE))
             self.assertIsNotNone(session)
@@ -183,7 +180,7 @@ class SpannerTest(unittest.TestCase):
         self.assertEqual(1, len(self.channel._channel_refs))
         self.assertEqual(1, self.channel._channel_refs[0]._affinity_ref)
         self.assertEqual(0, self.channel._channel_refs[0]._active_stream_ref)
-        result_set, rendezvous = stub.ExecuteSql.with_call(
+        result_set, _ = stub.ExecuteSql.with_call(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
                 sql=_TEST_SQL))
@@ -401,10 +398,8 @@ class SpannerTest(unittest.TestCase):
                 spanner_pb2.DeleteSessionRequest(name=future.result().name))
         
     def test_channel_connectivity_invalid_target(self):
-        config = grpc_gcp_pb2.ApiConfig()
-        google.protobuf.text_format.Merge(
-            pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
-            config)
+        config = config = grpc_gcp.api_config_from_text_pb(
+            pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
         http_request = Request()
         credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
         invalid_channel = secure_authorized_channel(
