@@ -33,9 +33,8 @@ def secure_channel(target, credentials, options=None):
     Returns:
       A Channel object.
     """
-    if options is not None and [
-            arg for arg in options if arg[0] == API_CONFIG_CHANNEL_ARG
-    ] is not None:
+    if options and [arg for arg in options
+                    if arg[0] == API_CONFIG_CHANNEL_ARG]:
         return _channel.Channel(target, ()
                                 if options is None else options, credentials)
     else:
@@ -53,9 +52,8 @@ def insecure_channel(target, options=None):
     Returns:
       A Channel object.
     """
-    if options is not None and [
-            arg for arg in options if arg[0] == API_CONFIG_CHANNEL_ARG
-    ] is not None:
+    if options and [arg for arg in options
+                    if arg[0] == API_CONFIG_CHANNEL_ARG]:
         return _channel.Channel(target, options)
     else:
         return grpc.insecure_channel(target, options)

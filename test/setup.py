@@ -28,6 +28,14 @@ CLASSIFIERS = [
     'License :: OSI Approved :: Apache Software License',
 ]
 
+PACKAGE_DATA = {
+    'grpc_gcp_test.unit': [
+        'credentials/ca.pem',
+        'credentials/server1.key',
+        'credentials/server1.pem',
+    ],
+}
+
 setuptools.setup(
     name='grpcio-gcp-test',
     version=version.GRPC_GCP,
@@ -38,6 +46,7 @@ setuptools.setup(
     license=LICENSE,
     classifiers=CLASSIFIERS,
     packages=setuptools.find_packages(),
+    package_data=PACKAGE_DATA,
     include_package_data=True,
     install_requires=[
         'grpcio-gcp>={version}'.format(version=version.GRPC_GCP),

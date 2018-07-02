@@ -307,7 +307,7 @@ class _StreamUnaryMultiCallable(grpc.StreamUnaryMultiCallable):
                   timeout=None,
                   metadata=None,
                   credentials=None):
-        request = request_iterator.next()
+        request = next(request_iterator)
         channel_ref, affinity_key = self._preprocess(request)
         response, rendezvous = channel_ref.channel().stream_unary(
             self._multi_callable_processor.method(),
@@ -323,7 +323,7 @@ class _StreamUnaryMultiCallable(grpc.StreamUnaryMultiCallable):
                timeout=None,
                metadata=None,
                credentials=None):
-        request = request_iterator.next()
+        request = next(request_iterator)
         channel_ref, affinity_key = self._preprocess(request)
         rendezvous = channel_ref.stream_unary(
             self._multi_callable_processor.method(),
@@ -354,7 +354,7 @@ class _StreamStreamMultiCallable(grpc.StreamStreamMultiCallable):
                  timeout=None,
                  metadata=None,
                  credentials=None):
-        request = request_iterator.next()
+        request = next(request_iterator)
         channel_ref, affinity_key = self._preprocess(request)
         rendezvous = _Rendezvous(channel_ref.channel().stream_stream(
             self._multi_callable_processor.method(),
@@ -420,7 +420,8 @@ class Channel(grpc.Channel):
     """A dummy channel which is backed by a pool of managed channels."""
 
     def __init__(self, target, options=None, credentials=None):
-        self._config = _get_api_config_channel_arg(options)
+        self._options = [] if options is None else list(options)
+        self._config = _get_api_config_channel_arg(self._options)
         # Default to 10.
         self._max_size = 10
         # Default to 100
@@ -436,17 +437,18 @@ class Channel(grpc.Channel):
                     self._config.channel_pool.max_concurrent_streams_low_watermark
 
         self._target = target
-        self._options = options
         self._credentials = credentials
         # A dict of {method name: affinity config}
         self._affinity_by_method = self._init_affinity_by_method_index()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         # A dict of {affinity key: channel_ref_data}.
         self._channel_ref_by_affinity_key = {}
         # A list of managed channel refs.
         self._channel_refs = []
         self._subscribers = []
         self._channel_pool_connectivity = None
+        # Create a new idle channel
+        self._get_channel_ref()
         return
 
     def _init_affinity_by_method_index(self):
@@ -499,10 +501,15 @@ class Channel(grpc.Channel):
 
             if num_channel_refs < self._max_size:
                 # Creates a new gRPC channel.
-                channel = grpc.secure_channel(
-                    self._target, self._credentials, self._options + [
-                        (_CLIENT_CHANNEL_ID, num_channel_refs),
-                    ])
+                options = self._options + [
+                    (_CLIENT_CHANNEL_ID, num_channel_refs),
+                ]
+                if self._credentials:
+                    channel = grpc.secure_channel(
+                        self._target, self._credentials, options)
+                else:
+                    channel = grpc.insecure_channel(self._target, options)
+
                 channel_ref = _ChannelRef(channel, num_channel_refs)
                 self._channel_refs.append(channel_ref)
                 if self._subscribers:
@@ -591,10 +598,10 @@ class Channel(grpc.Channel):
 
     def subscribe(self, callback, try_to_connect=False):
         with self._lock:
-            if not self._subscribers:
-                for channel_ref in self._channel_refs:
-                    channel_ref.channel().subscribe(
-                        self._on_subscribe_callback, try_to_connect)
+            for channel_ref in self._channel_refs:
+                channel_ref.channel().unsubscribe(self._on_subscribe_callback)
+                channel_ref.channel().subscribe(
+                    self._on_subscribe_callback, try_to_connect)
             self._subscribers.append(callback)
 
     def unsubscribe(self, callback):
