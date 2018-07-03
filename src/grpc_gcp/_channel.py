@@ -31,8 +31,9 @@ class _RendezvousDoneCallback(object):
         self._key = key
 
     def __call__(self, rendezvous):
-        self._call._postprocess(self._channel, self._key, rendezvous.result(),
-                                rendezvous)
+        if rendezvous.code() is grpc.StatusCode.OK:
+            self._call._postprocess(
+                self._channel, self._key, rendezvous.result(), rendezvous)
 
 
 class _Rendezvous(grpc.RpcError, grpc.Future, grpc.Call):
@@ -180,11 +181,14 @@ class _MultiCallableProcessor(object):
         Returns:
             tuple of channel, affinity_key.
         """
-        affinity_key = self._get_affinity_key_from_proto(
-            request) if self._affinity and (
-                self._affinity.command == grpc_gcp_pb2.AffinityConfig.BOUND
-                or self._affinity.command == grpc_gcp_pb2.AffinityConfig.UNBIND
-            ) else None
+        affinity_key = None
+        if (request is not None and
+                self._affinity and (
+                self._affinity.command == grpc_gcp_pb2.AffinityConfig.BOUND or
+                self._affinity.command == grpc_gcp_pb2.AffinityConfig.UNBIND
+                )):
+            affinity_key = self._get_affinity_key_from_proto(request)
+
         channel_ref = self._gcp_channel._get_channel_ref(affinity_key)
         channel_ref.active_stream_ref_incr()
         return channel_ref, affinity_key
@@ -325,7 +329,7 @@ class _StreamUnaryMultiCallable(grpc.StreamUnaryMultiCallable):
                credentials=None):
         request = next(request_iterator)
         channel_ref, affinity_key = self._preprocess(request)
-        rendezvous = channel_ref.stream_unary(
+        rendezvous = channel_ref.channel().stream_unary(
             self._multi_callable_processor.method(),
             self._multi_callable_processor.request_serializer(),
             self._multi_callable_processor.response_deserializer()).future(

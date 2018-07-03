@@ -34,6 +34,9 @@ PACKAGE_DATA = {
         'credentials/server1.key',
         'credentials/server1.pem',
     ],
+    'grpc_gcp_test.integration': [
+        'spanner.grpc.config',
+    ],
 }
 
 setuptools.setup(
