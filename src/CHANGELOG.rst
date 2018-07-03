@@ -1,6 +1,13 @@
 Changelog
 =========
 
+v0.2.1
+------
+
+- Apply RLock for Channel class.
+- Fix corner cases for async future calls.
+- Apply unit tests of grpc channel to grpc_gcp channel.
+
 v0.2.0
 ------
 
