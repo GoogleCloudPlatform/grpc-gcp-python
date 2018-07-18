@@ -37,6 +37,9 @@ PACKAGE_DATA = {
     'grpc_gcp_test.integration': [
         'spanner.grpc.config',
     ],
+    'grpc_gcp_test.benchmark': [
+        'spanner.grpc.config',
+    ],
 }
 
 setuptools.setup(
