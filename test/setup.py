@@ -40,6 +40,9 @@ PACKAGE_DATA = {
     'grpc_gcp_test.benchmark': [
         'spanner.grpc.config',
     ],
+    'grpc_gcp_test.stress': [
+        'spanner.grpc.config',
+    ],
 }
 
 setuptools.setup(
