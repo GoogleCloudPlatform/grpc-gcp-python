@@ -280,9 +280,50 @@ def test_execute_sql_async():
     _run_test(channel, execute_sql_async)
 
 
+def test_execute_streaming_sql():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+    _prepare_test_data(stub)
+
+    # warm up
+    for _ in range(_NUM_WARM_UP_CALLS):
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        rendezvous = stub.ExecuteStreamingSql(
+            spanner_pb2.ExecuteSqlRequest(
+                session=session.name,
+                sql='select data from storage where id = \'%s\'' %
+                _STORAGE_ID_PAYLOAD))
+        for _ in rendezvous:
+            pass
+        stub.DeleteSession(
+            spanner_pb2.DeleteSessionRequest(name=session.name))
+
+    def execute_streaming_sql(result):
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        for _ in range(_NUM_OF_RPC):
+            start = timeit.default_timer()
+            rendezvous = stub.ExecuteStreamingSql(
+                spanner_pb2.ExecuteSqlRequest(
+                    session=session.name,
+                    sql='select data from storage where id = \'%s\'' %
+                    _STORAGE_ID_PAYLOAD))
+            rendezvous.add_done_callback(
+                lambda resp: _handle_response(result, start, resp))
+            for _ in rendezvous:
+                pass
+        stub.DeleteSession(
+            spanner_pb2.DeleteSessionRequest(name=session.name))
+
+    print('Executing unary-streaming call.')
+    _run_test(channel, execute_streaming_sql)
+
+
 TEST_FUNCTIONS = {
     'execute_sql': test_execute_sql,
     'execute_sql_async': test_execute_sql_async,
+    'execute_streaming_sql': test_execute_streaming_sql,
 }
 
 if __name__ == "__main__":

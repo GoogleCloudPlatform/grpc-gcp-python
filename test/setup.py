@@ -58,8 +58,10 @@ setuptools.setup(
     package_data=PACKAGE_DATA,
     include_package_data=True,
     install_requires=[
+        'absl-py',
         'grpcio-gcp>={version}'.format(version=version.GRPC_GCP),
         'google-auth',
+        'google-cloud-monitoring',
         'requests',
     ],
 )

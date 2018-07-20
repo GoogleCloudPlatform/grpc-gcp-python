@@ -1,28 +1,40 @@
 import random
+import sys
 import threading
 import time
 import traceback
-import grpc
-import grpc_gcp
+
 import google.protobuf.struct_pb2
 import google.protobuf.text_format
+import grpc
+import grpc_gcp
 import pkg_resources
-
+from absl import flags
 from google.auth.transport.grpc import AuthMetadataPlugin
 from google.auth.transport.requests import Request
-from google.spanner.v1 import (keys_pb2, mutation_pb2,
-                               spanner_pb2_grpc, transaction_pb2)
+from google.spanner.v1 import spanner_pb2_grpc
+from grpc_gcp_test.stress import spanner_test_cases, stackdriver_util
+
 from six.moves import queue
-from grpc_gcp_test.stress import spanner_test_cases
 
 _TARGET = 'spanner.googleapis.com'
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
-_WEIGHTED_TEST_CASES = 'execute_sql:100'
-_NUM_CHANNELS_PER_TARGET = 1
-_NUM_STUBS_PER_CHANNEL = 1
-_TIMEOUT_SECS = -1 # Default no timeout
-_GRPC_GCP = False
 
+FLAGS = flags.FLAGS
+flags.DEFINE_string('weighted_cases', 'execute_sql:100',
+                    'comma seperated list of testcase:weighting')
+flags.DEFINE_string('api', 'spanner',
+                    'name of cloud api for stress testing')
+flags.DEFINE_integer('num_channels_per_target', 1,
+                     'number of channels per target')
+flags.DEFINE_integer('num_stubs_per_channel', 1,
+                     'number of stubs to create per channel')
+flags.DEFINE_integer('timeout_secs', -1,
+                     'timeout in seconds for the stress test')
+flags.DEFINE_boolean('gcp', False, 'load grpc gcp extension')
+
+
+util = stackdriver_util.StackdriverUtil()
 
 class TestRunner(threading.Thread):
     def __init__(self, stub, weighted_test_cases, exception_queue, stop_event):
@@ -36,10 +48,12 @@ class TestRunner(threading.Thread):
         while not self._stop_event.is_set():
             try:
                 test_case = next(self._test_cases_generator)
-                # start_time = time.time()
+                start_time = time.time()
                 test_case(self._stub)
-                # end_time = time.time()
-                print('-------------SUCCESS---------------')
+                end_time = time.time()
+                duration_ms = (end_time - start_time) * 1000
+                print('{} finished successfully!'.format(test_case.__name__))
+                util.add_timeseries(FLAGS.api, test_case.__name__, end_time, duration_ms)
             except Exception as e:
                 traceback.print_exc()
                 self._exception_queue.put(
@@ -64,7 +78,7 @@ def _create_channel():
     http_request = Request()
     credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
 
-    if _GRPC_GCP:
+    if FLAGS.gcp:
         config = grpc_gcp.api_config_from_text_pb(
             pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
         channel = _create_secure_gcp_channel(
@@ -103,14 +117,14 @@ def _parse_weighted_test_cases(test_case_args):
 
 
 def run_test():
-    weighted_test_cases = _parse_weighted_test_cases(_WEIGHTED_TEST_CASES)
+    weighted_test_cases = _parse_weighted_test_cases(FLAGS.weighted_cases)
     exception_queue = queue.Queue()
     stop_event = threading.Event()
     runners = []
 
-    for _ in xrange(_NUM_CHANNELS_PER_TARGET):
+    for _ in xrange(FLAGS.num_channels_per_target):
         channel = _create_channel()
-        for _ in xrange(_NUM_STUBS_PER_CHANNEL):
+        for _ in xrange(FLAGS.num_stubs_per_channel):
             stub = spanner_pb2_grpc.SpannerStub(channel)
             runner = TestRunner(stub, weighted_test_cases, exception_queue, stop_event)
             runners.append(runner)
@@ -119,7 +133,7 @@ def run_test():
         runner.start()
 
     try:
-        timeout = _TIMEOUT_SECS if _TIMEOUT_SECS >= 0 else None
+        timeout = FLAGS.timeout_secs if FLAGS.timeout_secs >= 0 else None
         raise exception_queue.get(block=True, timeout=timeout)
     except queue.Empty:
         pass
@@ -131,7 +145,5 @@ def run_test():
 
 
 if __name__ == '__main__':
+    FLAGS(sys.argv)
     run_test()
-
-
-
