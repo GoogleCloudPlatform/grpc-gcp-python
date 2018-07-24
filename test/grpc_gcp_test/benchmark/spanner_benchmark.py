@@ -13,6 +13,7 @@
 # limitations under the License.
 import argparse
 import threading
+import time
 import timeit
 import unittest
 
@@ -29,12 +30,13 @@ from google.spanner.v1 import (keys_pb2, mutation_pb2, spanner_pb2,
 
 _TARGET = 'spanner.googleapis.com:443'
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
-_TABLE = 'storage'
+_TABLE = 'large_table'
 _STORAGE_ID_PAYLOAD = 'payload'
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 _TEST_CASE = 'execute_sql'
 _NUM_OF_RPC = 100
 _NUM_OF_THREAD = 10
+_MAX_SIZE_PER_COLUMN = 4096000
 _PAYLOAD_BYTES = 4096000
 _GRPC_GCP = False
 _TIMEOUT = 60 * 60 * 24
@@ -117,7 +119,11 @@ def _create_stub(channel):
     return stub
 
 
-def _prepare_test_data(stub):
+def prepare_test_data():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+
+    print('Start adding payload to test table.')
     session = stub.CreateSession(
         spanner_pb2.CreateSessionRequest(database=_DATABASE))
     stub.Commit(
@@ -130,31 +136,60 @@ def _prepare_test_data(stub):
                     delete=mutation_pb2.Mutation.Delete(
                         table=_TABLE, key_set=keys_pb2.KeySet(all=True)))
             ]))
-    stub.Commit(
-        spanner_pb2.CommitRequest(
-            session=session.name,
-            single_use_transaction=transaction_pb2.TransactionOptions(
-                read_write=transaction_pb2.TransactionOptions.ReadWrite()),
-            mutations=[
-                mutation_pb2.Mutation(
-                    insert_or_update=mutation_pb2.Mutation.Write(
-                        table=_TABLE,
-                        columns=['id', 'data'],
-                        values=[
-                            google.protobuf.struct_pb2.ListValue(
-                                values=[
-                                    google.protobuf.struct_pb2.Value(
-                                        string_value=_STORAGE_ID_PAYLOAD),
-                                    google.protobuf.struct_pb2.Value(
-                                        string_value='x' * _PAYLOAD_BYTES)
-                                ])
-                        ]))
-            ]))
+    
+    # because of max data size, we need to seperate into different rows
+    column_bytes = min(_PAYLOAD_BYTES, _MAX_SIZE_PER_COLUMN)
+    rows = (_PAYLOAD_BYTES - 1) / column_bytes + 1
+    for i in range(rows):
+        stub.Commit(
+            spanner_pb2.CommitRequest(
+                session=session.name,
+                single_use_transaction=transaction_pb2.TransactionOptions(
+                    read_write=transaction_pb2.TransactionOptions.ReadWrite()),
+                mutations=[
+                    mutation_pb2.Mutation(
+                        insert_or_update=mutation_pb2.Mutation.Write(
+                            table=_TABLE,
+                            columns=['id', 'data'],
+                            values=[
+                                google.protobuf.struct_pb2.ListValue(
+                                    values=[
+                                        google.protobuf.struct_pb2.Value(
+                                            string_value='payload{}'.format(i)),
+                                        google.protobuf.struct_pb2.Value(
+                                            string_value='x' * column_bytes)
+                                    ])
+                            ]))
+                ]))
+    print('Successfully add payload to table.')
     stub.DeleteSession(
         spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
 def _run_test(channel, func):
+    # for num_of_thread in range(1, _NUM_OF_THREAD + 1):
+    result = []
+    threads = []
+    if _NUM_OF_THREAD > 1:
+        for tid in range(_NUM_OF_THREAD):
+            thread = threading.Thread(
+                target=func, name='tid_{}'.format(tid), args=(result,))
+            threads.append(thread)
+    start = timeit.default_timer()
+    if _NUM_OF_THREAD > 1:
+        for t in threads:
+            t.start()
+    else:
+        func(result)
+    for t in threads:
+        t.join()
+
+    while (True):
+        # wait for all responses.
+        if (len(result) >= _NUM_OF_RPC * _NUM_OF_THREAD):
+            break
+
+    result = sorted(result)
     print(('Threads, '
             'Channels, '
             'Avg(ms), '
@@ -164,43 +199,23 @@ def _run_test(channel, func):
             'p99(ms), '
             'p100(ms), '
             'QPS'))
-    for num_of_thread in range(1, _NUM_OF_THREAD + 1):
-        result = []
-        threads = []
-        if num_of_thread > 1:
-            for _ in range(num_of_thread):
-                thread = threading.Thread(target=func, args=(result,))
-                threads.append(thread)
-        start = timeit.default_timer()
-        if num_of_thread > 1:
-            for t in threads:
-                t.start()
-        else:
-            func(result)
-        for t in threads:
-            t.join()
-
-        while (True):
-            # wait for all responses.
-            if (len(result) >= _NUM_OF_RPC):
-                break
-
-        result = sorted(result)
-        print('{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}'.format(
-            num_of_thread,
-            len(channel._channel_refs) if _is_gcp_channel(channel) else 1,
-            sum(result) / len(result) * 1000,
-            result[0] * 1000,
-            result[int(len(result) / 2)] * 1000,
-            result[int(len(result) * 0.9)] * 1000,
-            result[int(len(result) * 0.99)] * 1000,
-            result[len(result) - 1] * 1000,
-            _NUM_OF_RPC * num_of_thread /
-            (timeit.default_timer() - start)))
+    print('{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}'.format(
+        _NUM_OF_THREAD,
+        len(channel._channel_refs) if _is_gcp_channel(channel) else 1,
+        sum(result) / len(result) * 1000,
+        result[0] * 1000,
+        result[int(len(result) / 2)] * 1000,
+        result[int(len(result) * 0.9)] * 1000,
+        result[int(len(result) * 0.99)] * 1000,
+        result[len(result) - 1] * 1000,
+        _NUM_OF_RPC * _NUM_OF_THREAD /
+        (timeit.default_timer() - start)))
 
 
 def _handle_response(result, start_time, resp):
     resp.result()
+    curr_thread_name = threading.currentThread().getName()
+    print('{}: single rpc call finished!'.format(curr_thread_name))
     dur = timeit.default_timer() - start_time
     result.append(dur)
 
@@ -208,7 +223,6 @@ def _handle_response(result, start_time, resp):
 def test_execute_sql():
     channel = _create_channel()
     stub = _create_stub(channel)
-    _prepare_test_data(stub)
 
     # warm up
     for _ in range(_NUM_WARM_UP_CALLS):
@@ -217,8 +231,7 @@ def test_execute_sql():
         stub.ExecuteSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select data from storage where id = \'%s\'' %
-                _STORAGE_ID_PAYLOAD))
+                sql='select data from storage'))
         stub.DeleteSession(
             spanner_pb2.DeleteSessionRequest(name=session.name))
 
@@ -230,8 +243,7 @@ def test_execute_sql():
             stub.ExecuteSql(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select data from storage where id = \'%s\'' %
-                    _STORAGE_ID_PAYLOAD))
+                    sql='select data from storage'))
             dur = timeit.default_timer() - start
             result.append(dur)
         stub.DeleteSession(
@@ -244,7 +256,6 @@ def test_execute_sql():
 def test_execute_sql_async():
     channel = _create_channel()
     stub = _create_stub(channel)
-    _prepare_test_data(stub)
 
     # warm up
     for _ in range(_NUM_WARM_UP_CALLS):
@@ -253,8 +264,7 @@ def test_execute_sql_async():
         resp_future = stub.ExecuteSql.future(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select data from storage where id = \'%s\'' %
-                _STORAGE_ID_PAYLOAD))
+                sql='select data from large_table'))
         resp_future.result()
         stub.DeleteSession(
             spanner_pb2.DeleteSessionRequest(name=session.name))
@@ -267,8 +277,7 @@ def test_execute_sql_async():
             resp_future = stub.ExecuteSql.future(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select data from storage where id = \'%s\'' %
-                    _STORAGE_ID_PAYLOAD),
+                    sql='select data from large_table'),
                 _TIMEOUT
                 )
             resp_future.add_done_callback(
@@ -283,32 +292,35 @@ def test_execute_sql_async():
 def test_execute_streaming_sql():
     channel = _create_channel()
     stub = _create_stub(channel)
-    _prepare_test_data(stub)
+    # _prepare_test_data(stub)
 
     # warm up
+    print('Begin warm up calls.')
     for _ in range(_NUM_WARM_UP_CALLS):
         session = stub.CreateSession(
             spanner_pb2.CreateSessionRequest(database=_DATABASE))
         rendezvous = stub.ExecuteStreamingSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select data from storage where id = \'%s\'' %
-                _STORAGE_ID_PAYLOAD))
+                sql='select * from {}'.format(_TABLE)))
         for _ in rendezvous:
             pass
         stub.DeleteSession(
             spanner_pb2.DeleteSessionRequest(name=session.name))
+    print('Warm up finished.')
 
     def execute_streaming_sql(result):
+        curr_thread_name = threading.currentThread().getName()
+        
         session = stub.CreateSession(
             spanner_pb2.CreateSessionRequest(database=_DATABASE))
         for _ in range(_NUM_OF_RPC):
             start = timeit.default_timer()
+            print('{}: start execute streaming sql at {}.'.format(curr_thread_name, start))
             rendezvous = stub.ExecuteStreamingSql(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select data from storage where id = \'%s\'' %
-                    _STORAGE_ID_PAYLOAD))
+                    sql='select * from {}'.format(_TABLE)))
             rendezvous.add_done_callback(
                 lambda resp: _handle_response(result, start, resp))
             for _ in rendezvous:
@@ -320,14 +332,98 @@ def test_execute_streaming_sql():
     _run_test(channel, execute_streaming_sql)
 
 
+class PrintLatencyCallback():
+    def __init__(self, id, start_time):
+        self.id = id
+        self.start_time = start_time
+
+    def __call__(self, resp):
+        dur = (timeit.default_timer() - self.start_time) * 1000
+        print('Finished {}th async call with {} ms...'.format(self.id, dur))
+
+
+def test_unary_stream_concurrent_streams():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+
+    session = stub.CreateSession(
+        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+    
+    futures = []
+    def execute_streaming_sql():
+        
+        rendezvous = stub.ExecuteStreamingSql(
+            spanner_pb2.ExecuteSqlRequest(
+                session=session.name,
+                sql='select * from {}'.format(_TABLE)))
+        futures.append(rendezvous)        
+
+    for i in range(_NUM_OF_RPC):
+        start = timeit.default_timer()
+        execute_streaming_sql()
+        print('{} --> started execute_streaming_sql with {} ms'.format(i+1, (time.time() - start) * 1000))
+    
+    list_sessions_start = time.time()
+    stub.ListSessions(
+        spanner_pb2.ListSessionsRequest(database=_DATABASE))
+    list_sessions_dur = (time.time() - list_sessions_start) * 1000
+    print('Finished list_sessions with {} ms'.format(list_sessions_dur))
+    
+    for future in futures:
+        for _ in future:
+            pass
+        print('Finished one streaming response')
+
+    stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
+
+def test_unary_unary_concurrent_streams():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+
+    session = stub.CreateSession(
+        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+
+    # warm up
+    for i in range(_NUM_WARM_UP_CALLS):
+        stub.ListSessions(
+            spanner_pb2.ListSessionsRequest(database=_DATABASE))
+    
+    print('Done warming up.')
+    
+    futures = []
+
+    for i in range(_NUM_OF_RPC):
+        future = stub.ListSessions.future(
+            spanner_pb2.ListSessionsRequest(database=_DATABASE))
+        print('{} --> list_sessions async started'.format(i + 1))
+        futures.append(future)
+
+    print('--------------starting another call-------------')
+    list_sessions_start = time.time()
+    stub.ListSessions(
+        spanner_pb2.ListSessionsRequest(database=_DATABASE))
+    list_sessions_dur = (time.time() - list_sessions_start) * 1000
+    print('--> list_sessions took {} ms'.format(list_sessions_dur))
+
+    print('Waiting for result...')
+    for future in futures:
+        future.result()
+    print('DONE.')
+
+    stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
+
 TEST_FUNCTIONS = {
+    'prepare_test_data': prepare_test_data,
     'execute_sql': test_execute_sql,
     'execute_sql_async': test_execute_sql_async,
     'execute_streaming_sql': test_execute_streaming_sql,
+    'unary_stream_concurrent_streams': test_unary_stream_concurrent_streams,
+    'unary_unary_concurrent_streams':test_unary_unary_concurrent_streams,
 }
 
 if __name__ == "__main__":
     _process_global_arguments()
     test_function = TEST_FUNCTIONS[_TEST_CASE]
     test_function()
-    

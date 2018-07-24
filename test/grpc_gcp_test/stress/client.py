@@ -52,7 +52,9 @@ class TestRunner(threading.Thread):
                 test_case(self._stub)
                 end_time = time.time()
                 duration_ms = (end_time - start_time) * 1000
-                print('{} finished successfully!'.format(test_case.__name__))
+                # print('{} finished successfully!'.format(test_case.__name__))
+                sys.stdout.write('.')
+                sys.stdout.flush()
                 util.add_timeseries(FLAGS.api, test_case.__name__, end_time, duration_ms)
             except Exception as e:
                 traceback.print_exc()
