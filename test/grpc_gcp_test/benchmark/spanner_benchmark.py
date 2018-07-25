@@ -30,7 +30,8 @@ from google.spanner.v1 import (keys_pb2, mutation_pb2, spanner_pb2,
 
 _TARGET = 'spanner.googleapis.com:443'
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
-_TABLE = 'large_table'
+_LARGE_TABLE = 'large_table'
+_TABLE = 'storage'
 _STORAGE_ID_PAYLOAD = 'payload'
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 _TEST_CASE = 'execute_sql'
@@ -134,7 +135,7 @@ def prepare_test_data():
             mutations=[
                 mutation_pb2.Mutation(
                     delete=mutation_pb2.Mutation.Delete(
-                        table=_TABLE, key_set=keys_pb2.KeySet(all=True)))
+                        table=_LARGE_TABLE, key_set=keys_pb2.KeySet(all=True)))
             ]))
     
     # because of max data size, we need to seperate into different rows
@@ -149,7 +150,7 @@ def prepare_test_data():
                 mutations=[
                     mutation_pb2.Mutation(
                         insert_or_update=mutation_pb2.Mutation.Write(
-                            table=_TABLE,
+                            table=_LARGE_TABLE,
                             columns=['id', 'data'],
                             values=[
                                 google.protobuf.struct_pb2.ListValue(
@@ -231,7 +232,7 @@ def test_execute_sql():
         stub.ExecuteSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select data from storage'))
+                sql='select data from {}'.format(_TABLE)))
         stub.DeleteSession(
             spanner_pb2.DeleteSessionRequest(name=session.name))
 
@@ -243,8 +244,9 @@ def test_execute_sql():
             stub.ExecuteSql(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select data from storage'))
+                    sql='select data from {}'.format(_TABLE)))
             dur = timeit.default_timer() - start
+            print('single call latency: {} ms'.format(dur * 1000))
             result.append(dur)
         stub.DeleteSession(
             spanner_pb2.DeleteSessionRequest(name=session.name))
@@ -332,16 +334,6 @@ def test_execute_streaming_sql():
     _run_test(channel, execute_streaming_sql)
 
 
-class PrintLatencyCallback():
-    def __init__(self, id, start_time):
-        self.id = id
-        self.start_time = start_time
-
-    def __call__(self, resp):
-        dur = (timeit.default_timer() - self.start_time) * 1000
-        print('Finished {}th async call with {} ms...'.format(self.id, dur))
-
-
 def test_unary_stream_concurrent_streams():
     channel = _create_channel()
     stub = _create_stub(channel)
@@ -355,24 +347,36 @@ def test_unary_stream_concurrent_streams():
         rendezvous = stub.ExecuteStreamingSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select * from {}'.format(_TABLE)))
-        futures.append(rendezvous)        
+                sql='select * from {}'.format(_LARGE_TABLE)))
+        futures.append(rendezvous)
 
     for i in range(_NUM_OF_RPC):
         start = timeit.default_timer()
         execute_streaming_sql()
         print('{} --> started execute_streaming_sql with {} ms'.format(i+1, (time.time() - start) * 1000))
-    
-    list_sessions_start = time.time()
-    stub.ListSessions(
-        spanner_pb2.ListSessionsRequest(database=_DATABASE))
-    list_sessions_dur = (time.time() - list_sessions_start) * 1000
-    print('Finished list_sessions with {} ms'.format(list_sessions_dur))
-    
-    for future in futures:
+
+    def print_callback(start):
+        dur = (time.time() - start) * 1000
+        print('Finished execute_sql async call with {} ms...'.format(dur))
+
+    print('Starting execute_sql async call....')
+    new_call_start = time.time()
+    execute_sql_future = stub.ExecuteSql.future(
+        spanner_pb2.ExecuteSqlRequest(
+            session=session.name,
+            sql='select * from {} where id = "payload0"'.format(_LARGE_TABLE)))
+    execute_sql_future.add_done_callback(lambda resp : print_callback(new_call_start))
+    print('Started execute_sql async')
+
+    for _ in futures[0]:
+        pass
+    print('Freed one active stream')
+
+    print('Free all active streams...')
+    for future in futures[1:]:
         for _ in future:
             pass
-        print('Finished one streaming response')
+    print('Done')
 
     stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
