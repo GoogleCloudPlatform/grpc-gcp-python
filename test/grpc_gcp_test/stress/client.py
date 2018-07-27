@@ -1,7 +1,7 @@
 import random
 import sys
 import threading
-import time
+import timeit
 import traceback
 
 import google.protobuf.struct_pb2
@@ -48,9 +48,9 @@ class TestRunner(threading.Thread):
         while not self._stop_event.is_set():
             try:
                 test_case = next(self._test_cases_generator)
-                start_time = time.time()
+                start_time = timeit.default_timer()
                 test_case(self._stub)
-                end_time = time.time()
+                end_time = timeit.default_timer()
                 duration_ms = (end_time - start_time) * 1000
                 sys.stdout.write('.')
                 sys.stdout.flush()

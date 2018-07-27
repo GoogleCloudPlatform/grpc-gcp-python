@@ -36,7 +36,7 @@ _STORAGE_ID_PAYLOAD = 'payload'
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 _TEST_CASE = 'execute_sql'
 _NUM_OF_RPC = 100
-_NUM_OF_THREAD = 10
+_NUM_OF_THREAD = 1
 _MAX_SIZE_PER_COLUMN = 4096000
 _PAYLOAD_BYTES = 4096000
 _GRPC_GCP = False
@@ -221,24 +221,68 @@ def _handle_response(result, start_time, resp):
     result.append(dur)
 
 
-def test_execute_sql():
+def test_list_sessions():
     channel = _create_channel()
     stub = _create_stub(channel)
 
     # warm up
     for _ in range(_NUM_WARM_UP_CALLS):
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        stub.ListSessions(
+            spanner_pb2.ListSessionsRequest(database=_DATABASE))
+
+    def list_sessions(result):
+        for _ in range(_NUM_OF_RPC):
+            start = timeit.default_timer()
+            stub.ListSessions(
+                spanner_pb2.ListSessionsRequest(database=_DATABASE))
+            dur = timeit.default_timer() - start
+            print('single call latency: {} ms'.format(dur * 1000))
+            result.append(dur)
+
+    _run_test(channel, list_sessions)
+
+
+def test_list_sessions_async():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+
+    # warm up
+    for _ in range(_NUM_WARM_UP_CALLS):
+        future = stub.ListSessions.future(
+            spanner_pb2.ListSessionsRequest(database=_DATABASE))
+        future.result()
+
+    def list_sessions_async(result):
+        for _ in range(_NUM_OF_RPC):
+            start = timeit.default_timer()
+            resp_future = stub.ListSessions.future(
+                spanner_pb2.ListSessionsRequest(database=_DATABASE),
+                _TIMEOUT)
+            def callback(resp, start_copy=start):
+                dur = time.time() - start_copy
+                result.append(dur)
+            resp_future.add_done_callback(callback)
+
+    _run_test(channel, list_sessions_async)
+
+
+def test_execute_sql():
+    channel = _create_channel()
+    stub = _create_stub(channel)
+
+    session = stub.CreateSession(
+        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+
+    # warm up
+    for _ in range(_NUM_WARM_UP_CALLS):
         stub.ExecuteSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
                 sql='select data from {}'.format(_TABLE)))
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
 
     def execute_sql(result):
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        # session = stub.CreateSession(
+        #     spanner_pb2.CreateSessionRequest(database=_DATABASE))
         for _ in range(_NUM_OF_RPC):
             start = timeit.default_timer()
             stub.ExecuteSql(
@@ -248,47 +292,54 @@ def test_execute_sql():
             dur = timeit.default_timer() - start
             print('single call latency: {} ms'.format(dur * 1000))
             result.append(dur)
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
+        # stub.DeleteSession(
+        #     spanner_pb2.DeleteSessionRequest(name=session.name))
 
     print('Executing blocking unary-unary call.')
     _run_test(channel, execute_sql)
+
+    stub.DeleteSession(
+        spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
 def test_execute_sql_async():
     channel = _create_channel()
     stub = _create_stub(channel)
 
+    session = stub.CreateSession(
+        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+
     # warm up
     for _ in range(_NUM_WARM_UP_CALLS):
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
         resp_future = stub.ExecuteSql.future(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select data from large_table'))
+                sql='select data from storage'))
         resp_future.result()
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
 
     def execute_sql_async(result):
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+        # session = stub.CreateSession(
+        #     spanner_pb2.CreateSessionRequest(database=_DATABASE))
         for _ in range(_NUM_OF_RPC):
             start = timeit.default_timer()
             resp_future = stub.ExecuteSql.future(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select data from large_table'),
+                    sql='select data from storage'),
                 _TIMEOUT
                 )
-            resp_future.add_done_callback(
-                lambda resp: _handle_response(result, start, resp))
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
+            def callback(resp, start_copy=start):
+                dur = time.time() - start_copy
+                result.append(dur)
+            resp_future.add_done_callback(callback)
+        # stub.DeleteSession(
+        #     spanner_pb2.DeleteSessionRequest(name=session.name))
 
     print('Executing async unary-unary call.')
     _run_test(channel, execute_sql_async)
+
+    stub.DeleteSession(
+        spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
 def test_execute_streaming_sql():
@@ -296,51 +347,50 @@ def test_execute_streaming_sql():
     stub = _create_stub(channel)
     # _prepare_test_data(stub)
 
+    session = stub.CreateSession(
+        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+
     # warm up
     print('Begin warm up calls.')
     for _ in range(_NUM_WARM_UP_CALLS):
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
         rendezvous = stub.ExecuteStreamingSql(
             spanner_pb2.ExecuteSqlRequest(
                 session=session.name,
-                sql='select * from {}'.format(_TABLE)))
+                sql='select data from {}'.format(_TABLE)))
         for _ in rendezvous:
             pass
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
     print('Warm up finished.')
 
     def execute_streaming_sql(result):
-        curr_thread_name = threading.currentThread().getName()
-        
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
+
         for _ in range(_NUM_OF_RPC):
             start = timeit.default_timer()
-            print('{}: start execute streaming sql at {}.'.format(curr_thread_name, start))
             rendezvous = stub.ExecuteStreamingSql(
                 spanner_pb2.ExecuteSqlRequest(
                     session=session.name,
-                    sql='select * from {}'.format(_TABLE)))
-            rendezvous.add_done_callback(
-                lambda resp: _handle_response(result, start, resp))
+                    sql='select data from {}'.format(_TABLE)))
+            def callback(resp, start_copy=start):
+                dur = time.time() - start_copy
+                result.append(dur)
+            rendezvous.add_done_callback(callback)
+
             for _ in rendezvous:
                 pass
-        stub.DeleteSession(
-            spanner_pb2.DeleteSessionRequest(name=session.name))
 
     print('Executing unary-streaming call.')
     _run_test(channel, execute_streaming_sql)
 
+    stub.DeleteSession(
+        spanner_pb2.DeleteSessionRequest(name=session.name))
 
-def test_unary_stream_concurrent_streams():
+
+def test_max_concurrent_streams():
     channel = _create_channel()
     stub = _create_stub(channel)
 
     session = stub.CreateSession(
         spanner_pb2.CreateSessionRequest(database=_DATABASE))
-    
+
     futures = []
     def execute_streaming_sql():
         
@@ -353,20 +403,20 @@ def test_unary_stream_concurrent_streams():
     for i in range(_NUM_OF_RPC):
         start = timeit.default_timer()
         execute_streaming_sql()
-        print('{} --> started execute_streaming_sql with {} ms'.format(i+1, (time.time() - start) * 1000))
+        print('{} --> started ExecuteStreamingSql with {} ms'.format(
+            i+1, (time.time() - start) * 1000))
+    print('Successfully started {} ExecuteStreamingSql calls.'.format(_NUM_OF_RPC))
 
     def print_callback(start):
         dur = (time.time() - start) * 1000
-        print('Finished execute_sql async call with {} ms...'.format(dur))
+        print('Finished ListSessions async call with {} ms...'.format(dur))
 
-    print('Starting execute_sql async call....')
+    print('Starting ListSessions async call....')
     new_call_start = time.time()
-    execute_sql_future = stub.ExecuteSql.future(
-        spanner_pb2.ExecuteSqlRequest(
-            session=session.name,
-            sql='select * from {} where id = "payload0"'.format(_LARGE_TABLE)))
-    execute_sql_future.add_done_callback(lambda resp : print_callback(new_call_start))
-    print('Started execute_sql async')
+    list_sessions_future = stub.ListSessions.future(
+        spanner_pb2.ListSessionsRequest(database=_DATABASE))
+    list_sessions_future.add_done_callback(lambda resp : print_callback(new_call_start))
+    print('Started ListSessions async call.')
 
     for _ in futures[0]:
         pass
@@ -381,50 +431,16 @@ def test_unary_stream_concurrent_streams():
     stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
-def test_unary_unary_concurrent_streams():
-    channel = _create_channel()
-    stub = _create_stub(channel)
-
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
-
-    # warm up
-    for i in range(_NUM_WARM_UP_CALLS):
-        stub.ListSessions(
-            spanner_pb2.ListSessionsRequest(database=_DATABASE))
-    
-    print('Done warming up.')
-    
-    futures = []
-
-    for i in range(_NUM_OF_RPC):
-        future = stub.ListSessions.future(
-            spanner_pb2.ListSessionsRequest(database=_DATABASE))
-        print('{} --> list_sessions async started'.format(i + 1))
-        futures.append(future)
-
-    print('--------------starting another call-------------')
-    list_sessions_start = time.time()
-    stub.ListSessions(
-        spanner_pb2.ListSessionsRequest(database=_DATABASE))
-    list_sessions_dur = (time.time() - list_sessions_start) * 1000
-    print('--> list_sessions took {} ms'.format(list_sessions_dur))
-
-    print('Waiting for result...')
-    for future in futures:
-        future.result()
-    print('DONE.')
-
-    stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
-
-
 TEST_FUNCTIONS = {
     'prepare_test_data': prepare_test_data,
     'execute_sql': test_execute_sql,
     'execute_sql_async': test_execute_sql_async,
     'execute_streaming_sql': test_execute_streaming_sql,
-    'unary_stream_concurrent_streams': test_unary_stream_concurrent_streams,
-    'unary_unary_concurrent_streams':test_unary_unary_concurrent_streams,
+    'list_sessions': test_list_sessions,
+    'list_sessions_async': test_list_sessions_async,
+    'max_concurrent_streams': test_max_concurrent_streams,
+    # 'unary_stream_concurrent_streams': test_unary_stream_concurrent_streams,
+    # 'unary_unary_concurrent_streams':test_unary_unary_concurrent_streams,
 }
 
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 from google.spanner.v1 import spanner_pb2
 
-
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
 _TEST_SQL = 'select id from storage'
 _TEST_COLUMN_DATA = 'payload'
+_TIMEOUT = 60 * 60 * 24
 
 def test_execute_sql(stub):
     session = stub.CreateSession(
@@ -33,14 +33,27 @@ def test_execute_streaming_sql(stub):
         spanner_pb2.ExecuteSqlRequest(
             session=session.name,
             sql=_TEST_SQL))
-    for partial_result_set in rendezvous:
-        partial_result_set.values[0].string_value
+    for _ in rendezvous:
+        pass
     stub.DeleteSession(
         spanner_pb2.DeleteSessionRequest(name=session.name))
+
+
+def test_list_sessions(stub):
+    stub.ListSessions(
+        spanner_pb2.ListSessionsRequest(database=_DATABASE))
+
+def test_list_sessions_async(stub):
+    resp_future = stub.ListSessions.future(
+        spanner_pb2.ListSessionsRequest(database=_DATABASE),
+        _TIMEOUT)
+    resp_future.result()
 
 
 TEST_CASES = {
     'execute_sql': test_execute_sql,
     'execute_streaming_sql':test_execute_streaming_sql,
     'execute_sql_async': test_execute_sql_async,
+    'list_sessions_async': test_list_sessions_async,
+    'list_sessions': test_list_sessions,
 }
