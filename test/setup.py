@@ -37,6 +37,12 @@ PACKAGE_DATA = {
     'grpc_gcp_test.integration': [
         'spanner.grpc.config',
     ],
+    'grpc_gcp_test.benchmark': [
+        'spanner.grpc.config',
+    ],
+    'grpc_gcp_test.stress': [
+        'spanner.grpc.config',
+    ],
 }
 
 setuptools.setup(
@@ -52,8 +58,10 @@ setuptools.setup(
     package_data=PACKAGE_DATA,
     include_package_data=True,
     install_requires=[
+        'absl-py',
         'grpcio-gcp>={version}'.format(version=version.GRPC_GCP),
         'google-auth',
+        'google-cloud-monitoring',
         'requests',
     ],
 )

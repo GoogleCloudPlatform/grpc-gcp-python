@@ -28,17 +28,16 @@ Test data:
 
 """
 
+import threading
+import unittest
+
 import google.protobuf.text_format
 import grpc
 import grpc_gcp
 import pkg_resources
-import threading
-import unittest
-
-from google.auth.transport.grpc import secure_authorized_channel
+from google.auth.transport.grpc import AuthMetadataPlugin
 from google.auth.transport.requests import Request
-from google.spanner.v1 import spanner_pb2
-from google.spanner.v1 import spanner_pb2_grpc
+from google.spanner.v1 import spanner_pb2, spanner_pb2_grpc
 
 _TARGET = 'spanner.googleapis.com'
 _DATABASE = 'projects/grpc-gcp/instances/sample/databases/benchmark'
@@ -81,7 +80,7 @@ class SpannerTest(unittest.TestCase):
             pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
         http_request = Request()
         credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
-        self.channel = secure_authorized_channel(
+        self.channel = self._create_secure_gcp_channel(
             credentials,
             http_request,
             _TARGET,
@@ -89,6 +88,19 @@ class SpannerTest(unittest.TestCase):
         self.assertIsInstance(self.channel, grpc_gcp._channel.Channel)
         self.assertEqual(self.channel._max_concurrent_streams_low_watermark, 1)
         self.assertEqual(self.channel._max_size, 10)
+    
+    def _create_secure_gcp_channel(
+            self, credentials, request, target, ssl_credentials=None, **kwargs):
+        # This method is copied from
+        # google.auth.transport.grpc.secure_authorized_channel but using
+        # grpc_gcp.secure_channel to create the channel.
+        metadata_plugin = AuthMetadataPlugin(credentials, request)
+        google_auth_credentials = grpc.metadata_call_credentials(metadata_plugin)
+        if ssl_credentials is None:
+            ssl_credentials = grpc.ssl_channel_credentials()
+        composite_credentials = grpc.composite_channel_credentials(
+            ssl_credentials, google_auth_credentials)
+        return grpc_gcp.secure_channel(target, composite_credentials, **kwargs)
 
     def test_create_session_reuse_channel(self):
         stub = spanner_pb2_grpc.SpannerStub(self.channel)
@@ -388,7 +400,6 @@ class SpannerTest(unittest.TestCase):
             lambda connectivities: grpc.ChannelConnectivity.READY in connectivities)
 
         self.assertEqual(2, len(self.channel._channel_refs))
-        # self.assertEqual(3, len(connectivities))
         self.assertSequenceEqual((grpc.ChannelConnectivity.IDLE,
                                   grpc.ChannelConnectivity.CONNECTING,
                                   grpc.ChannelConnectivity.READY),
@@ -402,7 +413,7 @@ class SpannerTest(unittest.TestCase):
             pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
         http_request = Request()
         credentials, _ = google.auth.default([_OAUTH_SCOPE], http_request)
-        invalid_channel = secure_authorized_channel(
+        invalid_channel = self._create_secure_gcp_channel(
             credentials,
             http_request,
             'localhost:1234',
@@ -434,7 +445,21 @@ class SpannerTest(unittest.TestCase):
         invalid_channel.unsubscribe(callback.update_first)
         invalid_channel.unsubscribe(callback.update_second)
         self.assertEqual(0, len(invalid_channel._subscribers))
+    
+    def test_large_concurrent_streams(self):
+        stub = spanner_pb2_grpc.SpannerStub(self.channel)
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
         
+        for i in range(200):
+            print(i)
+            rendezvous = stub.ExecuteStreamingSql(
+                spanner_pb2.ExecuteSqlRequest(
+                    session=session.name,
+                    sql=_TEST_SQL))
+
+        stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+
         
 
 if __name__ == "__main__":
