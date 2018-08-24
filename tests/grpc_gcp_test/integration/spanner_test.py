@@ -445,22 +445,7 @@ class SpannerTest(unittest.TestCase):
         invalid_channel.unsubscribe(callback.update_first)
         invalid_channel.unsubscribe(callback.update_second)
         self.assertEqual(0, len(invalid_channel._subscribers))
-    
-    def test_large_concurrent_streams(self):
-        stub = spanner_pb2_grpc.SpannerStub(self.channel)
-        session = stub.CreateSession(
-            spanner_pb2.CreateSessionRequest(database=_DATABASE))
-        
-        for i in range(200):
-            print(i)
-            rendezvous = stub.ExecuteStreamingSql(
-                spanner_pb2.ExecuteSqlRequest(
-                    session=session.name,
-                    sql=_TEST_SQL))
 
-        stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
-
-        
 
 if __name__ == "__main__":
     unittest.main()

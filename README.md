@@ -28,23 +28,23 @@ Install the gRPC-GCP extension
 Install the gRPC-GCP extension test & benchmark suite
 
 ```sh
- $ test/setup.sh
+ $ tests/setup.sh
 ```
 
 Run end to end integration tests.
 
 ```sh
- $ test/test.sh
+ $ tests/integration.sh
 ```
 
 Run end to end benchmark with gRPC-GCP extension.
 
 ```sh
- $ test/benchmark.sh --gcp
+ $ tests/benchmark.sh --gcp
 ```
 
 Run end to end benchmark without gRPC-GCP extension. For comparison purspose.
 
 ```sh
- $ test/benchmark.sh
+ $ tests/benchmark.sh
 ```
