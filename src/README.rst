@@ -75,8 +75,8 @@ Create channel pool using grpc_gcp.
 
   credentials = grpc.ssl_channel_credentials()
   # Add api config key-value pair to options
-  options = [(grpc_gcp.GRPC_GCP_CHANNEL_ARG_API_CONFIG, config)]
+  options = [(grpc_gcp.API_CONFIG_CHANNEL_ARG, config)]
   channel_pool = grpc_gcp.secure_channel(target, credentials, options)
 
-The generated channel pool is a wrapper of the original grpc.Channel,
-and has the same APIs.
+The generated channel pool is inherited from the original grpc.Channel,
+with underlying support for multiple grpc channels.

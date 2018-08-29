@@ -19,6 +19,12 @@ Download from github
  $ git submodule update --init --recursive
 ```
 
+Setup credentials. See [Getting Started With Authentication](https://cloud.google.com/docs/authentication/getting-started) for more details.
+
+```sh
+ $ export GOOGLE_APPLICATION_CREDENTIALS=path/to/key.json
+```
+
 Install the gRPC-GCP extension
 
 ```sh
@@ -48,3 +54,16 @@ Run end to end benchmark without gRPC-GCP extension. For comparison purspose.
 ```sh
  $ tests/benchmark.sh
 ```
+
+Run grpc channel unit tests.
+
+```sh
+ $ tests/unit.sh
+```
+
+Run stress test against grpc client calls with weights.
+
+```sh
+ $ tests/stress.sh --gcp --weighted_cases 'list_sessions:100'
+```
+

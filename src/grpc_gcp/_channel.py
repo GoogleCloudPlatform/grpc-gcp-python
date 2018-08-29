@@ -591,7 +591,7 @@ class Channel(grpc.Channel):
                 current_connectivity = grpc.ChannelConnectivity.SHUTDOWN
             else:
                 current_connectivity = grpc.ChannelConnectivity.IDLE
-            
+
             if current_connectivity != self._channel_pool_connectivity:
                 self._channel_pool_connectivity = current_connectivity
                 self._spawn_subscribe_callbacks(current_connectivity)
