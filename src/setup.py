@@ -28,6 +28,11 @@ CLASSIFIERS = [
     'License :: OSI Approved :: Apache Software License',
 ]
 
+INSTALL_REQUIRES = [
+    'grpcio>={version}'.format(version=version.GRPC),
+    'protobuf>=3.6.1',
+]
+
 setuptools.setup(
     name='grpcio-gcp',
     version=version.GRPC_GCP,
@@ -40,7 +45,5 @@ setuptools.setup(
     classifiers=CLASSIFIERS,
     packages=setuptools.find_packages(),
     include_package_data=True,
-    install_requires=[
-        'grpcio>={version}'.format(version=version.GRPC),
-    ],
+    install_requires=INSTALL_REQUIRES,
 )
