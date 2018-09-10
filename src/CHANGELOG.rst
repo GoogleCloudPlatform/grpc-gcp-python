@@ -1,6 +1,12 @@
 Changelog
 =========
 
+v0.2.2
+------
+
+- Readme fix.
+- Setup universal wheels.
+
 v0.2.1
 ------
 
