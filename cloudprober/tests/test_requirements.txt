@@ -1,0 +1,6 @@
+grpcio
+grpcio-tools
+google-auth
+google-cloud-error-reporting
+requests
+mock
