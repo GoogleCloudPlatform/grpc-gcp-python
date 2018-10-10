@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-
-# Generate gRPC source code using protocols downloaded from googleapis/googleapis
-
-git clone https://github.com/googleapis/googleapis.git
-
+cd "$(dirname "$0")"
 rm -rf google
-for p in $(find googleapis/google/ -type f -name '*.proto'); do
+for p in $(find ../third_party/googleapis/google -type f -name '*.proto'); do
     python \
     -m grpc_tools.protoc \
-    -I googleapis/ \
+    -I ../third_party/googleapis/ \
     --python_out=. \
     --grpc_python_out=. \
     "${p}"
@@ -19,5 +15,3 @@ for d in $(find google -type d); do
 done
 
 cp -f template/__init__.py google
-
-rm -rf googleapis

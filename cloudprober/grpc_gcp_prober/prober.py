@@ -63,11 +63,9 @@ def _get_stub_channel(target, use_extension=False):
   cred, _ = auth.default([_OAUTH_SCOPE])
   if not use_extension:
     return _secure_authorized_channel(cred, Request(), target)
-  config = grpc_gcp.grpc_gcp_pb2.ApiConfig()
-  google.protobuf.text_format.Merge(
-      pkg_resources.resource_string(__name__, 'spanner.grpc.config'),
-      config)
-  options = [(grpc_gcp.GRPC_GCP_CHANNEL_ARG_API_CONFIG, config)]
+  config = grpc_gcp.api_config_from_text_pb(
+      pkg_resources.resource_string(__name__, 'spanner.grpc.config'))
+  options = [(grpc_gcp.API_CONFIG_CHANNEL_ARG, config)]
   return _secure_authorized_channel(cred, Request(), target, options=options)
 
 
