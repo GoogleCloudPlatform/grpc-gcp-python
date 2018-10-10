@@ -3,3 +3,7 @@
 
 # IDE folders.
 .vscode/
+
+# generated code.
+tests/google
+cloudprober/google

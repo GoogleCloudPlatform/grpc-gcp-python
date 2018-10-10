@@ -1,0 +1,3 @@
+recursive-include grpc_gcp_prober *.py *.config
+recursive-include google *.py
+global-exclude *.pyc
