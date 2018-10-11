@@ -5,19 +5,6 @@ shows how to add probes for a new Cloud API in Python. For this
 instruction, we take Firestore API as an example and walk through the process of
 adding Python probes for Firestore.
 
-## Enable Cloud API in GCP Project
-
-If you are not a member of the GCP project `grpc-prober-testing`, send an email
-to grpc-cloud-api-support@gmail.com and request permissions for the project.
-
-Then use `$ gcloud init` to set `grpc-prober-testing` as the default project for
-Cloud SDK.
-
-Check [Enable and disable
-APIs](https://support.google.com/cloud/answer/6158841?hl=en) for details to
-enable the cloud API you want to probe. And enable all APIs that are needed when
-making client calls.
-
 ## Add Cloud API Probes
 
 The source code of the probes lives in [grpc_gcp_prober](../cloudprober/grpc_gcp_prober),
