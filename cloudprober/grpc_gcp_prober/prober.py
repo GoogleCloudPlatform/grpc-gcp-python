@@ -12,9 +12,9 @@ from stackdriver_util import StackdriverUtil
 from google import auth
 import google.auth.transport.grpc as transport_grpc
 from google.auth.transport.requests import Request
-from google.firestore.v1beta1 import firestore_pb2_grpc
+from google.cloud.firestore_v1beta1.proto import firestore_pb2_grpc
 import google.protobuf.text_format
-from google.spanner.v1 import spanner_pb2_grpc
+from google.cloud.spanner_v1.proto import spanner_pb2_grpc
 
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 

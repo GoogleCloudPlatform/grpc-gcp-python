@@ -9,5 +9,5 @@ cd "$(dirname "$0")"
 pip install --upgrade pip
 pip uninstall grpc-gcp-prober -y
 pip install -rrequirements.txt
-./codegen.sh
+# ./codegen.sh
 pip install .

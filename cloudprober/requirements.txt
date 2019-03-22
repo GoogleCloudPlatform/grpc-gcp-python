@@ -1,0 +1,7 @@
+grpcio
+grpcio-tools
+google-auth
+google-cloud-spanner
+google-cloud-firestore
+google-cloud-error-reporting
+requests

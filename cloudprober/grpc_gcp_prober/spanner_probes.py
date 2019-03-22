@@ -6,9 +6,9 @@ stackdriver_util.
 """
 
 import time
-from google.spanner.v1 import keys_pb2
-from google.spanner.v1 import spanner_pb2
-from google.spanner.v1 import transaction_pb2
+from google.cloud.spanner_v1.proto import keys_pb2
+from google.cloud.spanner_v1.proto import spanner_pb2
+from google.cloud.spanner_v1.proto import transaction_pb2
 
 _DATABASE = 'projects/grpc-prober-testing/instances/test-instance/databases/test-db'
 _CLOUD_API_NAME = 'Spanner'

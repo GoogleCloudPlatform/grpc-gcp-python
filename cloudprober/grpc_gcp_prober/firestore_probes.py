@@ -7,7 +7,7 @@ e.g. "read_latency_ms 100"
 """
 
 import time
-from google.firestore.v1beta1 import firestore_pb2
+from google.cloud.firestore_v1beta1.proto import firestore_pb2
 
 _PARENT_RESOURCE = 'projects/grpc-prober-testing/databases/(default)/documents'
 
