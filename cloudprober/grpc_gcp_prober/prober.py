@@ -94,13 +94,12 @@ def _execute_probe(api, use_extension=False):
 
   total = len(probe_functions)
   success = 0
-  metrics = {}
 
   # Execute all probes for given api
   for probe_name in probe_functions:
     probe_function = probe_functions[probe_name]
     try:
-      probe_function(stub, metrics)
+      probe_function(stub)
       success += 1
     except Exception:  # pylint: disable=broad-except
       # report any kind of exception to Stackdriver
@@ -110,7 +109,6 @@ def _execute_probe(api, use_extension=False):
     util.set_success(True)
 
   # Summarize metrics
-  util.add_metrics_dict(metrics)
   util.output_metrics()
 
   # Fail this probe if any function fails

@@ -5,17 +5,19 @@ The latency for each client call will be output to stackdriver as metrics using
 stackdriver_util.
 """
 
-import time
+from tracer import initialize_tracer
+
 from google.cloud.spanner_v1.proto import keys_pb2
 from google.cloud.spanner_v1.proto import spanner_pb2
 from google.cloud.spanner_v1.proto import transaction_pb2
+
 
 _DATABASE = 'projects/grpc-prober-testing/instances/test-instance/databases/test-db'
 _CLOUD_API_NAME = 'Spanner'
 _TEST_USERNAME = 'test_username'
 
 
-def _session_management(stub, metrics):
+def _session_management(stub):
   """Probes to test session related grpc call from Spanner stub.
 
   Includes tests against CreateSession, GetSession, ListSessions, and
@@ -23,258 +25,251 @@ def _session_management(stub, metrics):
 
   Args:
     stub: An object of SpannerStub.
-    metrics: A list of metrics.
 
   Raises:
     TypeError: An error occurred when result type is not as expected.
     ValueError: An error occurred when session name is not as expected.
   """
-  session = None
-  try:
-    # Create session
-    start = time.time()
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
-    latency = (time.time() - start) * 1000
-    metrics['create_session_latency_ms'] = latency
+  _session_management_tracer = initialize_tracer()
+  with _session_management_tracer.span(name='_session_management'):
+    session = None
+    try:
+      # Create session
+      with _session_management_tracer.span(name='stub.CreateSession'):
+        session = stub.CreateSession(spanner_pb2.CreateSessionRequest(database=_DATABASE))
 
-    if not isinstance(session, spanner_pb2.Session):
-      raise TypeError(
+      if not isinstance(session, spanner_pb2.Session):
+        raise TypeError(
           'response is of type %s, not spanner_pb2.Session!' % type(session))
 
-    # Get session
-    start = time.time()
-    response = stub.GetSession(spanner_pb2.GetSessionRequest(name=session.name))
-    latency = (time.time() - start) * 1000
-    metrics['get_session_latency_ms'] = latency
+      # Get session
+      with _session_management_tracer.span(name='stub.GetSession'):
+        response = stub.GetSession(spanner_pb2.GetSessionRequest(name=session.name))
 
-    if not isinstance(response, spanner_pb2.Session):
-      raise TypeError(
+      if not isinstance(response, spanner_pb2.Session):
+        raise TypeError(
           'response is of type %s, not spanner_pb2.Session!' % type(response))
-    if response.name != session.name:
-      raise ValueError('incorrect session name %s' % response.name)
+      if response.name != session.name:
+        raise ValueError('incorrect session name %s' % response.name)
 
-    # List sessions
-    start = time.time()
-    response = stub.ListSessions(
-        spanner_pb2.ListSessionsRequest(database=_DATABASE))
-    latency = (time.time() - start) * 1000
-    metrics['list_sessions_latency_ms'] = latency
+      # List session
+      with _session_management_tracer.span(name='stub.ListSessions'):
+        response = stub.ListSessions(
+            spanner_pb2.ListSessionsRequest(database=_DATABASE))
 
-    session_list = response.sessions
+      session_list = response.sessions
 
-    if session.name not in (s.name for s in session_list):
-      raise ValueError(
+      if session.name not in (s.name for s in session_list):
+        raise ValueError(
           'session name %s is not in the result session list!' % session.name)
 
-  finally:
-    if session is not None:
-      start = time.time()
-      stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
-      latency = (time.time() - start) * 1000
-      metrics['delete_session_latency_ms'] = latency
+    finally:
+      if session is not None:
+        # Delete session
+        with _session_management_tracer.span(name='stub.DeleteSession'):
+          stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
-def _execute_sql(stub, metrics):
+
+def _execute_sql(stub):
   """Probes to test ExecuteSql and ExecuteStreamingSql call from Spanner stub.
 
   Args:
     stub: An object of SpannerStub.
-    metrics: A list of metrics.
 
   Raises:
     ValueError: An error occurred when sql result is not as expected.
   """
-  session = None
-  try:
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+  _execute_sql_tracer = initialize_tracer()
+  with _execute_sql_tracer.span(name='_execute_sql'):
+    session = None
+    try:
+      # Create session
+      with _execute_sql_tracer.span(name='stub.CreateSession'):
+        session = stub.CreateSession(
+          spanner_pb2.CreateSessionRequest(database=_DATABASE))
 
-    # Probing ExecuteSql call
-    start = time.time()
-    result_set = stub.ExecuteSql(
-        spanner_pb2.ExecuteSqlRequest(
+      # Probing ExecuteSql call
+      with _execute_sql_tracer.span(name='stub.ExecuteSql'):
+        result_set = stub.ExecuteSql(
+          spanner_pb2.ExecuteSqlRequest(
             session=session.name, sql='select * FROM users'))
-    latency = (time.time() - start) * 1000
-    metrics['execute_sql_latency_ms'] = latency
 
-    if result_set is None:
-      raise ValueError('result_set is None')
-    if len(result_set.rows) != 1:
-      raise ValueError('incorrect result_set rows %d' % len(result_set.rows))
-    if result_set.rows[0].values[0].string_value != _TEST_USERNAME:
-      raise ValueError(
+      if result_set is None:
+        raise ValueError('result_set is None')
+      if len(result_set.rows) != 1:
+        raise ValueError('incorrect result_set rows %d' % len(result_set.rows))
+      if result_set.rows[0].values[0].string_value != _TEST_USERNAME:
+        raise ValueError(
           'incorrect sql result %s' % result_set.rows[0].values[0].string_value)
 
-    # Probing ExecuteStreamingSql call
-    partial_result_set = stub.ExecuteStreamingSql(
-        spanner_pb2.ExecuteSqlRequest(
+      # Probing ExecuteStreamingSql call
+      with _execute_sql_tracer.span(name='stub.ExecuteStreamingSql'):
+        partial_result_set = stub.ExecuteStreamingSql(
+          spanner_pb2.ExecuteSqlRequest(
             session=session.name, sql='select * FROM users'))
 
-    if partial_result_set is None:
-      raise ValueError('streaming_result_set is None')
+      if partial_result_set is None:
+        raise ValueError('streaming_result_set is None')
 
-    start = time.time()
-    first_result = partial_result_set.next()
-    latency = (time.time() - start) * 1000
-    metrics['execute_streaming_sql_latency_ms'] = latency
+      with _execute_sql_tracer.span(name='partial_result_set.next'):
+        first_result = partial_result_set.next()
 
-    if first_result.values[0].string_value != _TEST_USERNAME:
-      raise ValueError('incorrect streaming sql first result %s' %
-                       first_result.values[0].string_value)
+      if first_result.values[0].string_value != _TEST_USERNAME:
+        raise ValueError('incorrect streaming sql first result %s' %
+                         first_result.values[0].string_value)
 
-  finally:
-    if session is not None:
-      stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+    finally:
+      if session is not None:
+        with _execute_sql_tracer.span(name='stub.DeleteSession'):
+          stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
-def _read(stub, metrics):
+def _read(stub):
   """Probe to test Read and StreamingRead grpc call from Spanner stub.
 
   Args:
     stub: An object of SpannerStub.
-    metrics: A list of metrics.
 
   Raises:
     ValueError: An error occurred when read result is not as expected.
   """
-  session = None
-  try:
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+  _read_tracer = initialize_tracer()
+  with _read_tracer.span(name='_read'):
+    session = None
+    try:
+      # Create session
+      with _read_tracer.span(name='stub.CreateSession'):
+        session = stub.CreateSession(
+          spanner_pb2.CreateSessionRequest(database=_DATABASE))
 
-    # Probing Read call
-    start = time.time()
-    result_set = stub.Read(
-        spanner_pb2.ReadRequest(
-            session=session.name,
-            table='users',
-            columns=['username', 'firstname', 'lastname'],
-            key_set=keys_pb2.KeySet(all=True)))
-    latency = (time.time() - start) * 1000
-    metrics['read_latency_ms'] = latency
+      # Probing Read call
+      with _read_tracer.span(name='stub.Read'):
+        result_set = stub.Read(
+              spanner_pb2.ReadRequest(
+                  session=session.name,
+                  table='users',
+                  columns=['username', 'firstname', 'lastname'],
+                  key_set=keys_pb2.KeySet(all=True)))
 
-    if result_set is None:
-      raise ValueError('result_set is None')
-    if len(result_set.rows) != 1:
-      raise ValueError('incorrect result_set rows %d' % len(result_set.rows))
-    if result_set.rows[0].values[0].string_value != _TEST_USERNAME:
-      raise ValueError(
-          'incorrect sql result %s' % result_set.rows[0].values[0].string_value)
+      if result_set is None:
+        raise ValueError('result_set is None')
+      if len(result_set.rows) != 1:
+        raise ValueError('incorrect result_set rows %d' % len(result_set.rows))
+      if result_set.rows[0].values[0].string_value != _TEST_USERNAME:
+        raise ValueError(
+            'incorrect sql result %s' % result_set.rows[0].values[0].string_value)
 
-    # Probing StreamingRead call
-    partial_result_set = stub.StreamingRead(
-        spanner_pb2.ReadRequest(
-            session=session.name,
-            table='users',
-            columns=['username', 'firstname', 'lastname'],
-            key_set=keys_pb2.KeySet(all=True)))
+      # Probing StreamingRead call
+      with _read_tracer.span(name='stub.StreamingRead'):
+        partial_result_set = stub.StreamingRead(
+            spanner_pb2.ReadRequest(
+                session=session.name,
+                table='users',
+                columns=['username', 'firstname', 'lastname'],
+                key_set=keys_pb2.KeySet(all=True)))
 
-    if partial_result_set is None:
-      raise ValueError('streaming_result_set is None')
+      if partial_result_set is None:
+        raise ValueError('streaming_result_set is None')
 
-    start = time.time()
-    first_result = partial_result_set.next()
-    latency = (time.time() - start) * 1000
-    metrics['streaming_read_latency_ms'] = latency
+      with _read_tracer.span(name='partial_result_set.next'):
+        first_result = partial_result_set.next()
 
-    if first_result.values[0].string_value != _TEST_USERNAME:
-      raise ValueError('incorrect streaming sql first result %s' %
-                       first_result.values[0].string_value)
+      if first_result.values[0].string_value != _TEST_USERNAME:
+        raise ValueError('incorrect streaming sql first result %s' %
+                         first_result.values[0].string_value)
 
-  finally:
-    if session is not None:
-      stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+    finally:
+      if session is not None:
+        with _read_tracer.span(name='stub.DeleteSession'):
+          stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
-def _transaction(stub, metrics):
+def _transaction(stub):
   """Probe to test BeginTransaction, Commit and Rollback grpc from Spanner stub.
 
   Args:
     stub: An object of SpannerStub.
-    metrics: A list of metrics.
   """
-  session = None
-  try:
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
+  _transaction_tracer = initialize_tracer()
+  with _transaction_tracer.span(name='_transaction'):
+    session = None
+    try:
+      with _transaction_tracer.span(name='stub.CreateSession'):
+        session = stub.CreateSession(
+            spanner_pb2.CreateSessionRequest(database=_DATABASE))
 
-    txn_options = transaction_pb2.TransactionOptions(
-        read_write=transaction_pb2.TransactionOptions.ReadWrite())
-    txn_request = spanner_pb2.BeginTransactionRequest(
-        session=session.name,
-        options=txn_options,
-    )
+      txn_options = transaction_pb2.TransactionOptions(
+          read_write=transaction_pb2.TransactionOptions.ReadWrite())
+      txn_request = spanner_pb2.BeginTransactionRequest(
+          session=session.name,
+          options=txn_options,
+      )
 
-    # Probing BeginTransaction call
-    start = time.time()
-    txn = stub.BeginTransaction(txn_request)
-    latency = (time.time() - start) * 1000
-    metrics['begin_transaction_latency_ms'] = latency
+      # Probing BeginTransaction call
+      with _transaction_tracer.span(name='stub.BeginTransaction'):
+        txn = stub.BeginTransaction(txn_request)
 
-    # Probing Commit call
-    commit_request = spanner_pb2.CommitRequest(
-        session=session.name, transaction_id=txn.id)
-    start = time.time()
-    stub.Commit(commit_request)
-    latency = (time.time() - start) * 1000
-    metrics['commit_latency_ms'] = latency
+      # Probing Commit call
+      commit_request = spanner_pb2.CommitRequest(
+          session=session.name, transaction_id=txn.id)
+      with _transaction_tracer.span(name='stub.Commit'):
+        stub.Commit(commit_request)
 
-    # Probing Rollback call
-    txn = stub.BeginTransaction(txn_request)
-    rollback_request = spanner_pb2.RollbackRequest(
-        session=session.name, transaction_id=txn.id)
-    start = time.time()
-    stub.Rollback(rollback_request)
-    latency = (time.time() - start) * 1000
-    metrics['rollback_latency_ms'] = latency
+      # Probing Rollback call
+      txn = stub.BeginTransaction(txn_request)
+      rollback_request = spanner_pb2.RollbackRequest(
+          session=session.name, transaction_id=txn.id)
+      with _transaction_tracer.span(name='stub.Rollback'):
+        stub.Rollback(rollback_request)
 
-  finally:
-    if session is not None:
-      stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+    finally:
+      if session is not None:
+        with _transaction_tracer.span(name='stub.DeleteSession'):
+          stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
-def _partition(stub, metrics):
+def _partition(stub):
   """Probe to test PartitionQuery and PartitionRead grpc call from Spanner stub.
 
   Args:
     stub: An object of SpannerStub.
-    metrics: A list of metrics.
   """
-  session = None
-  try:
-    session = stub.CreateSession(
-        spanner_pb2.CreateSessionRequest(database=_DATABASE))
-    txn_options = transaction_pb2.TransactionOptions(
-        read_only=transaction_pb2.TransactionOptions.ReadOnly())
-    txn_selector = transaction_pb2.TransactionSelector(begin=txn_options)
+  _partition_tracer = initialize_tracer()
+  with _partition_tracer.span(name='_partition'):
+    session = None
+    try:
 
-    # Probing PartitionQuery call
-    ptn_query_request = spanner_pb2.PartitionQueryRequest(
+      with _partition_tracer.span(name='stub.CreateSession'):
+        session = stub.CreateSession(
+          spanner_pb2.CreateSessionRequest(database=_DATABASE))
+      txn_options = transaction_pb2.TransactionOptions(
+        read_only=transaction_pb2.TransactionOptions.ReadOnly())
+      txn_selector = transaction_pb2.TransactionSelector(begin=txn_options)
+
+      # Probing PartitionQuery call
+      ptn_query_request = spanner_pb2.PartitionQueryRequest(
         session=session.name,
         sql='select * FROM users',
         transaction=txn_selector,
-    )
-    start = time.time()
-    stub.PartitionQuery(ptn_query_request)
-    latency = (time.time() - start) * 1000
-    metrics['partition_query_latency_ms'] = latency
+      )
+      with _partition_tracer.span(name='stub.PartitionQuery'):
+        stub.PartitionQuery(ptn_query_request)
 
-    # Probing PartitionRead call
-    ptn_read_request = spanner_pb2.PartitionReadRequest(
+      # Probing PartitionRead call
+      ptn_read_request = spanner_pb2.PartitionReadRequest(
         session=session.name,
         table='users',
         transaction=txn_selector,
         key_set=keys_pb2.KeySet(all=True),
         columns=['username', 'firstname', 'lastname'])
-    start = time.time()
-    stub.PartitionRead(ptn_read_request)
-    latency = (time.time() - start) * 1000
-    metrics['partition_read_latency_ms'] = latency
+      with _partition_tracer.span(name='stub.PartitionRead'):
+        stub.PartitionRead(ptn_read_request)
 
-  finally:
-    if session is not None:
-      stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
+    finally:
+      if session is not None:
+        with _partition_tracer.span(name='stub.DeleteSession'):
+          stub.DeleteSession(spanner_pb2.DeleteSessionRequest(name=session.name))
 
 
 PROBE_FUNCTIONS = {
