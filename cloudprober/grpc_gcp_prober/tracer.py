@@ -1,7 +1,7 @@
 import os
 
 import opencensus.trace.tracer
-from opencensus.trace.exporters import stackdriver_exporter
+from opencensus.ext.stackdriver import trace_exporter as stackdriver_exporter
 from opencensus.common.transports.async_ import AsyncTransport
 
 
@@ -19,7 +19,8 @@ def initialize_tracer(project_id=None):
     if os.environ.get('GOOGLE_CLOUD_PROJECT') is not None:
       project_id = os.environ['GOOGLE_CLOUD_PROJECT']
     else:
-      raise ValueError('can not find a valid project_id to initialize the tracer')
+      raise ValueError(
+        'Can not find a valid project_id to initialize the tracer, check if $GOOGLE_CLOUD_PROJECT is set')
 
   exporter = stackdriver_exporter.StackdriverExporter(
     project_id=project_id,
