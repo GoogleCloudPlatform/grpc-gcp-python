@@ -5,6 +5,7 @@ The latency for each client call will be output to stackdriver as metrics using
 stackdriver_util.
 """
 
+import os
 from tracer import initialize_tracer
 
 from google.cloud.spanner_v1.proto import keys_pb2
@@ -12,8 +13,8 @@ from google.cloud.spanner_v1.proto import spanner_pb2
 from google.cloud.spanner_v1.proto import transaction_pb2
 
 
-_DATABASE = 'projects/grpc-prober-testing/instances/test-instance/databases/test-db'
-_CLOUD_API_NAME = 'Spanner'
+_DATABASE = os.environ['DATABASE']
+_SPANNER_TARGET = os.environ['SPANNER_TARGET']
 _TEST_USERNAME = 'test_username'
 
 
@@ -31,7 +32,8 @@ def _session_management(stub):
     ValueError: An error occurred when session name is not as expected.
   """
   _session_management_tracer = initialize_tracer()
-  with _session_management_tracer.span(name='_session_management'):
+  with _session_management_tracer.span(name='_session_management') as root_span:
+    root_span.add_annotation('endpoint info available', endpoint=_SPANNER_TARGET)
     session = None
     try:
       # Create session
@@ -81,7 +83,8 @@ def _execute_sql(stub):
     ValueError: An error occurred when sql result is not as expected.
   """
   _execute_sql_tracer = initialize_tracer()
-  with _execute_sql_tracer.span(name='_execute_sql'):
+  with _execute_sql_tracer.span(name='_execute_sql') as root_span:
+    root_span.add_annotation('endpoint info available', endpoint=_SPANNER_TARGET)
     session = None
     try:
       # Create session
@@ -135,7 +138,8 @@ def _read(stub):
     ValueError: An error occurred when read result is not as expected.
   """
   _read_tracer = initialize_tracer()
-  with _read_tracer.span(name='_read'):
+  with _read_tracer.span(name='_read') as root_span:
+    root_span.add_annotation('endpoint info available', endpoint=_SPANNER_TARGET)
     session = None
     try:
       # Create session
@@ -192,7 +196,8 @@ def _transaction(stub):
     stub: An object of SpannerStub.
   """
   _transaction_tracer = initialize_tracer()
-  with _transaction_tracer.span(name='_transaction'):
+  with _transaction_tracer.span(name='_transaction') as root_span:
+    root_span.add_annotation('endpoint info available', endpoint=_SPANNER_TARGET)
     session = None
     try:
       with _transaction_tracer.span(name='stub.CreateSession'):
@@ -236,7 +241,8 @@ def _partition(stub):
     stub: An object of SpannerStub.
   """
   _partition_tracer = initialize_tracer()
-  with _partition_tracer.span(name='_partition'):
+  with _partition_tracer.span(name='_partition') as root_span:
+    root_span.add_annotation('endpoint info available', endpoint=_SPANNER_TARGET)
     session = None
     try:
 

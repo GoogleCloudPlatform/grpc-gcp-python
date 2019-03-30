@@ -1,5 +1,6 @@
 """Main method of the cloudprober as an entrypoint to execute probes."""
 
+import os
 import argparse
 import sys
 import traceback
@@ -18,8 +19,8 @@ from google.cloud.spanner_v1.proto import spanner_pb2_grpc
 
 _OAUTH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
-_SPANNER_TARGET = 'spanner.googleapis.com'
-_FIRESTORE_TARGET = 'firestore.googleapis.com'
+_SPANNER_TARGET = os.environ['SPANNER_TARGET']
+_FIRESTORE_TARGET = os.environ['FIRESTORE_TARGET']
 
 
 def _get_args():
